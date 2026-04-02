@@ -101,6 +101,13 @@ export function markdownToTasks(md) {
       continue;
     }
     if (trimmed === "## Completed") {
+      // Flush the last Active task before leaving that section; otherwise it
+      // stays as currentTask and the first #### in Completed wrongly files it
+      // under the first completed date (todo / in-progress tasks "become" done).
+      if (currentTask && section === "active") {
+        activeTasks.push(currentTask);
+        currentTask = null;
+      }
       section = "completed";
       parsingCompleted = true;
       continue;

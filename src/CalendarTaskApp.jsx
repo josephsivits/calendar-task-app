@@ -583,14 +583,6 @@ export default function CalendarTaskApp() {
               Completed: <strong style={{ color: "#f97316" }}>{pomodoroCount}</strong> pomodoros
             </div>
           </div>
-
-          {/* --- Import / Export --- */}
-          <div style={{ display: "flex", gap: 6 }}>
-            <button style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)", flex: 1 }} onClick={handleExport}>{"\u2193"} Export</button>
-            <button style={{ ...S.btn("rgba(168,85,247,0.12)"), border: "1px solid rgba(168,85,247,0.25)", flex: 1 }} onClick={() => importRef.current?.click()}>{"\u2191"} Import</button>
-            <input ref={importRef} type="file" accept=".md" hidden onChange={handleImport} />
-          </div>
-          {importMsg && <div style={{ fontSize: 9, color: "#86efac", textAlign: "center", marginTop: 4, padding: "4px 8px", background: "rgba(34,197,94,0.1)", borderRadius: 6 }}>{importMsg}</div>}
         </div>
       </div>
 
@@ -651,6 +643,12 @@ export default function CalendarTaskApp() {
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
               <button style={{ ...S.btn(), fontSize: 8, padding: "2px 8px" }} onClick={() => setShowMdPreview(true)}>Preview</button>
             </div>
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <button style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)", flex: 1 }} onClick={handleExport}>{"\u2193"} Export</button>
+              <button style={{ ...S.btn("rgba(168,85,247,0.12)"), border: "1px solid rgba(168,85,247,0.25)", flex: 1 }} onClick={() => importRef.current?.click()}>{"\u2191"} Import</button>
+              <input ref={importRef} type="file" accept=".md" hidden onChange={handleImport} />
+            </div>
+            {importMsg && <div style={{ fontSize: 9, color: "#86efac", textAlign: "center", marginTop: 6, padding: "4px 8px", background: "rgba(34,197,94,0.1)", borderRadius: 6 }}>{importMsg}</div>}
           </div>
         </div>
       </div>
