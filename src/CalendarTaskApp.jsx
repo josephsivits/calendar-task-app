@@ -799,37 +799,56 @@ export default function CalendarTaskApp() {
           </div>
 
           {/* --- Pomodoro --- */}
-          <div style={{ ...S.section, borderColor: "rgba(220,38,38,0.12)" }}>
+          <div style={{
+            ...S.section,
+            borderColor: pomodoroRunning ? "rgba(220,38,38,0.45)" : "rgba(255,255,255,0.08)",
+            transition: "border-color 0.2s",
+          }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, gap: 6 }}>
-              <div style={{ ...S.sectionLabel, color: "rgba(220,38,38,0.5)", marginBottom: 0, flex: 1 }}>
-                Pomodoro {"\u2014"} {pomodoroLabel}
+              <div style={{
+                ...S.sectionLabel,
+                color: pomodoroRunning ? "#dc2626" : "rgba(255,255,255,0.28)",
+                marginBottom: 0,
+                flex: 1,
+                transition: "color 0.2s",
+              }}>
+                {pomodoroRunning ? "\uD83C\uDF45" : "\uD83E\uDD6B"}{" "}
+                {pomodoroLabel}
               </div>
               <PlayPauseButton
                 running={pomodoroRunning}
                 onToggle={togglePomodoro}
-                style={{ padding: "3px 10px", fontSize: 13 }}
+                style={pomodoroRunning
+                  ? { padding: "3px 10px", fontSize: 13 }
+                  : {
+                      padding: "3px 10px",
+                      fontSize: 13,
+                      background: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.18)",
+                      color: "rgba(255,255,255,0.4)",
+                    }}
               />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-              <span style={{ fontSize: 9, width: 34, color: "rgba(255,255,255,0.35)" }}>Focus</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, opacity: pomodoroRunning || pomodoroPhase === "breakPending" ? 1 : 0.45, transition: "opacity 0.2s" }}>
+              <span style={{ fontSize: 9, width: 34, color: pomodoroRunning ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.25)" }}>Focus</span>
               <div style={{ flex: 1, height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}>
-                <div style={{ width: (pomodoroPhase === "work" ? (pomodoroSeconds / 1500) * 100 : pomodoroPhase === "breakPending" ? 100 : 0) + "%", height: "100%", background: "linear-gradient(90deg, #dc2626, #f97316)", borderRadius: 4, transition: "width 0.5s" }} />
+                <div style={{ width: (pomodoroPhase === "work" ? (pomodoroSeconds / 1500) * 100 : pomodoroPhase === "breakPending" ? 100 : 0) + "%", height: "100%", background: pomodoroRunning ? "linear-gradient(90deg, #dc2626, #f97316)" : "rgba(255,255,255,0.2)", borderRadius: 4, transition: "width 0.5s, background 0.2s" }} />
               </div>
-              <span style={{ fontSize: 9, width: 44, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "rgba(255,255,255,0.35)" }}>
+              <span style={{ fontSize: 9, width: 44, textAlign: "right", fontVariantNumeric: "tabular-nums", color: pomodoroRunning ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.25)" }}>
                 {pomodoroPhase === "work" ? fmtTime(pomodoroSeconds) : pomodoroPhase === "breakPending" ? "25:00" : "\u2014"}
               </span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, opacity: pomodoroRunning && pomodoroPhase === "break" ? 1 : 0.45, transition: "opacity 0.2s" }}>
               <span style={{ fontSize: 9, width: 34, color: "rgba(255,255,255,0.35)" }}>Break</span>
               <div style={{ flex: 1, height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}>
-                <div style={{ width: (pomodoroPhase === "break" ? (pomodoroSeconds / 300) * 100 : 0) + "%", height: "100%", background: "linear-gradient(90deg, #2563eb, #7c3aed)", borderRadius: 4, transition: "width 0.5s" }} />
+                <div style={{ width: (pomodoroPhase === "break" ? (pomodoroSeconds / 300) * 100 : 0) + "%", height: "100%", background: pomodoroRunning ? "linear-gradient(90deg, #2563eb, #7c3aed)" : "rgba(255,255,255,0.2)", borderRadius: 4, transition: "width 0.5s, background 0.2s" }} />
               </div>
               <span style={{ fontSize: 9, width: 44, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "rgba(255,255,255,0.35)" }}>
                 {pomodoroPhase === "break" ? fmtTime(pomodoroSeconds) : "\u2014"}
               </span>
             </div>
             <div style={{ textAlign: "center", marginTop: 6, fontSize: 10, color: "rgba(255,255,255,0.25)" }}>
-              Completed: <strong style={{ color: "#f97316" }}>{pomodoroCount}</strong> pomodoros
+              Completed: <strong style={{ color: pomodoroRunning ? "#f97316" : "rgba(255,255,255,0.35)" }}>{pomodoroCount}</strong> pomodoros
             </div>
           </div>
         </div>
