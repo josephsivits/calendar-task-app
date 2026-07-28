@@ -255,6 +255,7 @@ export default function CalendarTaskApp() {
       setPomodoroSeconds(0);
     }
     setTimerRunning((r) => !r);
+    syncToStorage();
   };
 
   /* ═══ TASK ACTIONS ═══ */
