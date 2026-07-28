@@ -96,6 +96,74 @@ function createTonePlayer() {
 const audio = createTonePlayer();
 const DragCtx = { dragIdx: null };
 
+const DIALOG_STYLE = {
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(4px)" },
+  box: { background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 22, maxWidth: 400, width: "90%" },
+  btn: (bg) => ({ background: bg || "rgba(255,255,255,0.08)", border: "none", borderRadius: 6, padding: "6px 12px", color: "#e2e8f0", cursor: "pointer", fontSize: 10, fontWeight: 600, fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace", transition: "all 0.15s" }),
+};
+
+/** Accessible confirm dialog: Tab cycles actions, Enter activates focused button, Escape cancels. */
+function ConfirmDialog({ title, children, confirmLabel, confirmStyle, onConfirm, onCancel, initialFocus = "confirm" }) {
+  const cancelRef = useRef(null);
+  const confirmRef = useRef(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  useEffect(() => {
+    const prev = document.activeElement;
+    const initial = initialFocus === "cancel" ? cancelRef.current : confirmRef.current;
+    initial?.focus();
+
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onCancelRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusables = [cancelRef.current, confirmRef.current].filter(Boolean);
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first || !focusables.includes(document.activeElement)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (document.activeElement === last || !focusables.includes(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      if (prev instanceof HTMLElement) prev.focus();
+    };
+  }, [initialFocus]);
+
+  return (
+    <div style={DIALOG_STYLE.overlay} onClick={onCancel}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        style={DIALOG_STYLE.box}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div id="confirm-dialog-title" style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{title}</div>
+        {children}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button ref={cancelRef} type="button" style={DIALOG_STYLE.btn()} onClick={onCancel}>Cancel</button>
+          <button ref={confirmRef} type="button" style={{ ...DIALOG_STYLE.btn(), ...confirmStyle }} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* =========================================================
    MAIN APP
    ========================================================= */
@@ -487,6 +555,9 @@ export default function CalendarTaskApp() {
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
         textarea:focus, input:focus { outline: 1px solid rgba(249,115,22,0.4); }
+        button:focus-visible { outline: 2px solid rgba(249,115,22,0.75); outline-offset: 2px; }
+        [data-focusable-card]:focus { outline: none; }
+        [data-focusable-card]:focus-visible { outline: 2px solid rgba(249,115,22,0.75); outline-offset: 2px; }
         .md-render h1 { font-size: 16px; font-weight: 800; margin: 12px 0 6px; color: #f97316; }
         .md-render h2 { font-size: 14px; font-weight: 700; margin: 10px 0 4px; color: #fb923c; }
         .md-render h3 { font-size: 12px; font-weight: 700; margin: 8px 0 4px; color: #fdba74; }
@@ -507,18 +578,30 @@ export default function CalendarTaskApp() {
             return (
               <div key={task.id} style={{ marginBottom: 6 }}>
                 <div
+                  data-focusable-card
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={sel}
+                  aria-label={`Task T${task.id}${task.description ? `: ${task.description}` : ""}`}
                   draggable
                   onDragStart={() => onDragStart(idx)}
                   onDragOver={onDragOver}
                   onDrop={(e) => onDrop(e, idx)}
                   style={{ ...S.taskCard(sel), marginBottom: 0, borderBottomLeftRadius: notesOpen ? 0 : 8, borderBottomRightRadius: notesOpen ? 0 : 8 }}
                   onClick={() => setSelectedTaskId(task.id)}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedTaskId(task.id);
+                    }
+                  }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={S.badge}>T<sub>{task.id}</sub></div>
                     <div style={{ display: "flex", gap: 2 }}>
-                      <button style={S.iconBtn} title="Complete" onClick={(e) => { e.stopPropagation(); setCompleteDialog(task); }}>{"\u2713"}</button>
-                      <button style={{ ...S.iconBtn, color: sel ? "#fca5a5" : "#f87171" }} title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteDialog(task); }}>{"\u2715"}</button>
+                      <button type="button" style={S.iconBtn} title="Complete" onClick={(e) => { e.stopPropagation(); setCompleteDialog(task); }} onKeyDown={(e) => e.stopPropagation()}>{"\u2713"}</button>
+                      <button type="button" style={{ ...S.iconBtn, color: sel ? "#fca5a5" : "#f87171" }} title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteDialog(task); }} onKeyDown={(e) => e.stopPropagation()}>{"\u2715"}</button>
                     </div>
                   </div>
                   {editingDesc === task.id ? (
@@ -534,8 +617,11 @@ export default function CalendarTaskApp() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 3 }}>
                     <div style={{ ...S.time, fontSize: 14 }}>{fmtTime(task.timeOnTask)}</div>
                     <button
+                      type="button"
                       title={notesOpen ? "Collapse notepad" : "Expand notepad"}
+                      aria-expanded={notesOpen}
                       onClick={(e) => toggleTaskNotes(task.id, e)}
+                      onKeyDown={(e) => e.stopPropagation()}
                       style={{
                         ...S.iconBtn,
                         opacity: 0.85,
@@ -718,7 +804,23 @@ export default function CalendarTaskApp() {
 
           {/* Attachment list */}
           {attachments.map((att) => (
-            <div key={att.id} style={S.attCard(att.id === selectedAttId)} onClick={() => setSelectedAttId(att.id)}>
+            <div
+              key={att.id}
+              data-focusable-card
+              role="button"
+              tabIndex={0}
+              aria-pressed={att.id === selectedAttId}
+              aria-label={`Attachment: ${att.name}`}
+              style={S.attCard(att.id === selectedAttId)}
+              onClick={() => setSelectedAttId(att.id)}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedAttId(att.id);
+                }
+              }}
+            >
               <img
                 src={att.dataUri} alt=""
                 style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, flexShrink: 0, cursor: "zoom-in" }}
@@ -844,48 +946,44 @@ export default function CalendarTaskApp() {
 
       {/* ═══ DIALOGS ═══ */}
 
-      {/* Delete task */}
       {deleteDialog && (
-        <div style={S.dialog} onClick={() => setDeleteDialog(null)}>
-          <div style={S.dialogBox} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Delete Task T<sub>{deleteDialog.id}</sub>?</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginBottom: 5 }}>{deleteDialog.description || "No description"} {"\u2014"} {fmtTime(deleteDialog.timeOnTask)}</div>
-            <div style={{ fontSize: 10, color: "#fca5a5", marginBottom: 14 }}>This will permanently delete all data for this task.</div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button style={S.btn()} onClick={() => setDeleteDialog(null)}>Cancel</button>
-              <button style={{ ...S.btn(), ...S.btnDanger }} onClick={confirmDelete}>Delete</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={<>Delete Task T<sub>{deleteDialog.id}</sub>?</>}
+          confirmLabel="Delete"
+          confirmStyle={S.btnDanger}
+          initialFocus="cancel"
+          onCancel={() => setDeleteDialog(null)}
+          onConfirm={confirmDelete}
+        >
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginBottom: 5 }}>{deleteDialog.description || "No description"} {"\u2014"} {fmtTime(deleteDialog.timeOnTask)}</div>
+          <div style={{ fontSize: 10, color: "#fca5a5", marginBottom: 14 }}>This will permanently delete all data for this task.</div>
+        </ConfirmDialog>
       )}
 
-      {/* Complete task */}
       {completeDialog && (
-        <div style={S.dialog} onClick={() => setCompleteDialog(null)}>
-          <div style={S.dialogBox} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Complete Task T<sub>{completeDialog.id}</sub>?</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginBottom: 5 }}>{completeDialog.description || "No description"} {"\u2014"} {fmtTime(completeDialog.timeOnTask)}</div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginBottom: 14 }}>Started: {new Date(completeDialog.startDate).toLocaleString()}</div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button style={S.btn()} onClick={() => setCompleteDialog(null)}>Cancel</button>
-              <button style={{ ...S.btn("rgba(34,197,94,0.2)"), border: "1px solid rgba(34,197,94,0.4)" }} onClick={confirmComplete}>Complete</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={<>Complete Task T<sub>{completeDialog.id}</sub>?</>}
+          confirmLabel="Complete"
+          confirmStyle={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.4)" }}
+          onCancel={() => setCompleteDialog(null)}
+          onConfirm={confirmComplete}
+        >
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginBottom: 5 }}>{completeDialog.description || "No description"} {"\u2014"} {fmtTime(completeDialog.timeOnTask)}</div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginBottom: 14 }}>Started: {new Date(completeDialog.startDate).toLocaleString()}</div>
+        </ConfirmDialog>
       )}
 
-      {/* Delete attachment */}
       {deleteAttDialog && (
-        <div style={S.dialog} onClick={() => setDeleteAttDialog(null)}>
-          <div style={S.dialogBox} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Delete Attachment?</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginBottom: 14 }}>"{deleteAttDialog.name}"</div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button style={S.btn()} onClick={() => setDeleteAttDialog(null)}>Cancel</button>
-              <button style={{ ...S.btn(), ...S.btnDanger }} onClick={confirmDeleteAtt}>Delete</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Delete Attachment?"
+          confirmLabel="Delete"
+          confirmStyle={S.btnDanger}
+          initialFocus="cancel"
+          onCancel={() => setDeleteAttDialog(null)}
+          onConfirm={confirmDeleteAtt}
+        >
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginBottom: 14 }}>"{deleteAttDialog.name}"</div>
+        </ConfirmDialog>
       )}
 
       {/* Zoom preview */}
