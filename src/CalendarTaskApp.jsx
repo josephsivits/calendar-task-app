@@ -721,7 +721,7 @@ export default function CalendarTaskApp() {
   const S = {
     app: { display: "flex", height: "100vh", fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace", background: "#0a0f1a", color: "#e2e8f0", overflow: "hidden", fontSize: 13 },
     col: { flex: 1, display: "flex", flexDirection: "column", padding: "10px 10px", overflow: "hidden", borderRight: "1px dashed rgba(255,255,255,0.08)" },
-    colScroll: { flex: 1, overflowY: "auto", overflowX: "hidden", paddingRight: 4 },
+    colScroll: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: "2px 4px 2px 2px" },
     colTitle: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 2.5, marginBottom: 10, color: "rgba(255,255,255,0.3)", textAlign: "center" },
     taskCard: (sel) => ({ background: sel ? "linear-gradient(135deg, #166534, #15803d)" : "rgba(22,101,52,0.12)", border: sel ? "1px solid #22c55e" : "1px solid rgba(34,197,94,0.25)", borderRadius: 8, padding: "9px 11px", marginBottom: 6, cursor: "pointer", transition: "all 0.15s", color: sel ? "#fff" : "#86efac" }),
     completedCard: { background: "linear-gradient(135deg, #166534, #15803d)", border: "1px solid #22c55e", borderRadius: 8, padding: "9px 11px", marginBottom: 6, color: "#fff" },
@@ -747,9 +747,18 @@ export default function CalendarTaskApp() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
-        textarea:focus, input:focus { outline: 1px solid rgba(249,115,22,0.4); }
-        button:focus-visible { outline: 2px solid rgba(249,115,22,0.75); outline-offset: 2px; }
-        [data-focusable-card]:focus { outline: 2px solid rgba(249,115,22,0.75); outline-offset: 2px; }
+        textarea:focus, input:focus {
+          outline: none;
+          box-shadow: inset 0 0 0 1.5px rgba(249,115,22,0.85);
+        }
+        button:focus-visible {
+          outline: none;
+          box-shadow: inset 0 0 0 2px rgba(249,115,22,0.85);
+        }
+        [data-focusable-card]:focus, [data-focusable-card]:focus-visible {
+          outline: none;
+          box-shadow: inset 0 0 0 2px rgba(249,115,22,0.85);
+        }
         [data-nav-column]:focus { outline: none; }
         [data-nav-column][data-nav-active="true"] {
           box-shadow: inset 0 0 0 1.5px #c2410c;
