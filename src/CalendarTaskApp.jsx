@@ -24,7 +24,7 @@ const getMonday = (d) => {
 };
 
 /* =========================================================
-   AUDIO — Musical tones per spec
+   AUDIO — Beeps for timer / focus / break
    ========================================================= */
 function createTonePlayer() {
   let ctx = null;
@@ -33,7 +33,6 @@ function createTonePlayer() {
     return ctx;
   };
 
-  // 5/4 time at 120 BPM: quarter = 0.5s, eighth = 0.25s, half = 1.0s
   const playNote = (freq, startTime, duration, gain = 0.25) => {
     const c = getCtx();
     const osc = c.createOscillator();
@@ -41,7 +40,6 @@ function createTonePlayer() {
     osc.type = "sine";
     osc.frequency.value = freq;
     g.gain.value = gain;
-    // gentle fade out
     g.gain.setValueAtTime(gain, startTime);
     g.gain.exponentialRampToValueAtTime(0.01, startTime + duration - 0.02);
     osc.connect(g);
@@ -50,45 +48,30 @@ function createTonePlayer() {
     osc.stop(startTime + duration);
   };
 
+  const playBeeps = (count, { freq, duration, gap, gain = 0.25 }) => {
+    try {
+      const c = getCtx();
+      const now = c.currentTime;
+      for (let i = 0; i < count; i++) {
+        playNote(freq, now + i * gap, duration, gain);
+      }
+    } catch (e) {}
+  };
+
   return {
-    // 300s timer complete: 5 quarter notes, low Db (Db3 = 138.59 Hz), 5/4
+    // 300s timer complete: 3 beeps
     timerComplete: () => {
-      try {
-        const c = getCtx();
-        const now = c.currentTime;
-        const freq = 138.59; // Db3
-        for (let i = 0; i < 5; i++) {
-          playNote(freq, now + i * 0.5, 0.4);
-        }
-      } catch (e) {}
+      playBeeps(3, { freq: 138.59, duration: 0.28, gap: 0.38, gain: 0.28 });
     },
 
-    // 25 min pomodoro complete: 5 eighth notes x 4 groups (20 total), Bb (Bb3 = 233.08 Hz)
+    // Focus track complete: 5 small beeps
     pomodoroComplete: () => {
-      try {
-        const c = getCtx();
-        const now = c.currentTime;
-        const freq = 233.08; // Bb3
-        let t = now;
-        for (let group = 0; group < 4; group++) {
-          for (let n = 0; n < 5; n++) {
-            playNote(freq, t, 0.2);
-            t += 0.25; // eighth note
-          }
-          t += 0.15; // small gap between groups
-        }
-      } catch (e) {}
+      playBeeps(5, { freq: 233.08, duration: 0.1, gap: 0.16, gain: 0.2 });
     },
 
-    // 5 min break complete: 2 half notes, Fb (= E4 = 329.63 Hz)
+    // Break complete: 2 small beeps
     breakComplete: () => {
-      try {
-        const c = getCtx();
-        const now = c.currentTime;
-        const freq = 329.63; // E4 (enharmonic Fb)
-        playNote(freq, now, 0.9, 0.2);
-        playNote(freq, now + 1.0, 0.9, 0.2);
-      } catch (e) {}
+      playBeeps(2, { freq: 329.63, duration: 0.1, gap: 0.16, gain: 0.2 });
     },
   };
 }
@@ -221,7 +204,13 @@ export default function CalendarTaskApp() {
   const [pomodoroPhase, setPomodoroPhase] = useState("work");
   const [pomodoroCount, setPomodoroCount] = useState(0);
   const [pomodoroRunning, setPomodoroRunning] = useState(false);
+  const [focusSoundEnabled, setFocusSoundEnabled] = useState(true);
+  const [breakSoundEnabled, setBreakSoundEnabled] = useState(true);
   const pomodoroRef = useRef(null);
+  const focusSoundEnabledRef = useRef(true);
+  const breakSoundEnabledRef = useRef(true);
+  focusSoundEnabledRef.current = focusSoundEnabled;
+  breakSoundEnabledRef.current = breakSoundEnabled;
 
   /* notes + attachments (per-week) */
   const [noteContent, setNoteContent] = useState("");
@@ -246,6 +235,8 @@ export default function CalendarTaskApp() {
   const [importMsg, setImportMsg] = useState(null);
   const importRef = useRef(null);
   const [isToday, setIsToday] = useState(true);
+  const [soundDemoOpen, setSoundDemoOpen] = useState(false);
+  const syncClickRef = useRef({ count: 0, timer: null });
 
   /* column / list keyboard navigation */
   const [navColumn, setNavColumn] = useState("tasks");
@@ -279,6 +270,8 @@ export default function CalendarTaskApp() {
     setNextTaskId(settings.nextTaskId ?? (activeTasks.length ? Math.max(...activeTasks.map((t) => t.id)) + 1 : 0));
     setNextAttId(settings.nextAttId ?? 0);
     setPomodoroCount(settings.pomodoroCount ?? 0);
+    setFocusSoundEnabled(settings.focusSoundEnabled !== false);
+    setBreakSoundEnabled(settings.breakSoundEnabled !== false);
     const td = todayStr();
     setNoteContent(loadNote(td));
     setAttachments(loadAttachments(td));
@@ -290,11 +283,11 @@ export default function CalendarTaskApp() {
   useEffect(() => {
     if (!hydrated.current) return;
     setDirty(true);
-  }, [tasks, completedTasks, noteContent, attachments, nextTaskId, nextAttId, pomodoroCount]);
+  }, [tasks, completedTasks, noteContent, attachments, nextTaskId, nextAttId, pomodoroCount, focusSoundEnabled, breakSoundEnabled]);
 
   const syncToStorage = () => {
     saveTasks(tasks, completedTasks);
-    saveSettings({ nextTaskId, nextAttId, pomodoroCount });
+    saveSettings({ nextTaskId, nextAttId, pomodoroCount, focusSoundEnabled, breakSoundEnabled });
     saveNote(selectedDate, noteContent);
     saveAttachments(selectedDate, attachments);
     setDirty(false);
@@ -366,13 +359,13 @@ export default function CalendarTaskApp() {
             const next = ps + 1;
             if (next >= limit) {
               if (phase === "work") {
-                audio.pomodoroComplete();
+                if (focusSoundEnabledRef.current) audio.pomodoroComplete();
                 setPomodoroRunning(false);
                 setPomodoroPhase("breakPending");
                 setPomodoroCount((c) => c + 1);
                 return 0;
               } else {
-                audio.breakComplete();
+                if (breakSoundEnabledRef.current) audio.breakComplete();
                 setPomodoroRunning(false);
                 setPomodoroPhase("work");
                 return 0;
@@ -399,6 +392,20 @@ export default function CalendarTaskApp() {
     }
     setPomodoroRunning((r) => !r);
     syncToStorage();
+  };
+
+  /** Triple-click SYNC to toggle the sound demo panel (still syncs each click). */
+  const handleSyncClick = () => {
+    syncToStorage();
+    const ref = syncClickRef.current;
+    clearTimeout(ref.timer);
+    ref.count += 1;
+    if (ref.count >= 3) {
+      ref.count = 0;
+      setSoundDemoOpen((v) => !v);
+      return;
+    }
+    ref.timer = setTimeout(() => { ref.count = 0; }, 500);
   };
 
   /* ═══ TASK ACTIONS ═══ */
@@ -929,10 +936,12 @@ export default function CalendarTaskApp() {
 
           {/* --- SYNC --- */}
           <button
-            onClick={syncToStorage}
+            type="button"
+            onClick={handleSyncClick}
+            title="Triple-click for sound demo"
             style={{
               ...S.btn(dirty ? "rgba(249,115,22,0.15)" : "rgba(34,197,94,0.1)"),
-              border: `1px solid ${dirty ? "rgba(249,115,22,0.4)" : "rgba(34,197,94,0.3)"}`,
+              border: `1px solid ${dirty ? "rgba(249,115,22,0.4)" : soundDemoOpen ? "rgba(255,255,255,0.35)" : "rgba(34,197,94,0.3)"}`,
               color: dirty ? "#fb923c" : "#86efac",
               width: "100%", padding: "5px 10px", fontSize: 9, marginBottom: 8,
               display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
@@ -942,6 +951,41 @@ export default function CalendarTaskApp() {
             {dirty ? "SYNC" : "SYNCED"}
             {lastSynced && <span style={{ opacity: 0.4, marginLeft: 4 }}>{lastSynced.toLocaleTimeString()}</span>}
           </button>
+
+          {soundDemoOpen && (
+            <div style={{
+              ...S.section,
+              borderColor: "rgba(255,255,255,0.12)",
+              marginBottom: 8,
+              padding: "8px 10px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}>
+              <div style={{ ...S.sectionLabel, marginBottom: 0, color: "rgba(255,255,255,0.35)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Sound demo</span>
+                <button
+                  type="button"
+                  onClick={() => setSoundDemoOpen(false)}
+                  style={{ ...S.iconBtn, fontSize: 10, padding: "0 4px", color: "rgba(255,255,255,0.35)" }}
+                  title="Hide"
+                >
+                  {"\u2715"}
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => audio.timerComplete()} style={{ ...S.btn("rgba(249,115,22,0.15)"), border: "1px solid rgba(249,115,22,0.4)", color: "#fb923c", fontSize: 9, padding: "4px 8px" }}>
+                  300s · 3
+                </button>
+                <button type="button" onClick={() => audio.pomodoroComplete()} style={{ ...S.btn("rgba(220,38,38,0.15)"), border: "1px solid rgba(220,38,38,0.4)", color: "#fca5a5", fontSize: 9, padding: "4px 8px" }}>
+                  Focus · 5
+                </button>
+                <button type="button" onClick={() => audio.breakComplete()} style={{ ...S.btn("rgba(37,99,235,0.15)"), border: "1px solid rgba(37,99,235,0.4)", color: "#93c5fd", fontSize: 9, padding: "4px 8px" }}>
+                  Break · 2
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* --- Calendar --- */}
           <div style={S.section}>
@@ -1013,6 +1057,27 @@ export default function CalendarTaskApp() {
               />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, opacity: pomodoroRunning || pomodoroPhase === "breakPending" ? 1 : 0.45, transition: "opacity 0.2s" }}>
+              <button
+                type="button"
+                title={focusSoundEnabled ? "Focus stop sound on — click to disable" : "Focus stop sound off — click to enable"}
+                onClick={() => setFocusSoundEnabled((v) => !v)}
+                style={{
+                  background: focusSoundEnabled ? "rgba(220,38,38,0.2)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${focusSoundEnabled ? "rgba(220,38,38,0.45)" : "rgba(255,255,255,0.12)"}`,
+                  borderRadius: 4,
+                  padding: "1px 5px",
+                  fontSize: 8,
+                  fontWeight: 600,
+                  color: focusSoundEnabled ? "#fca5a5" : "rgba(255,255,255,0.25)",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  lineHeight: 1.3,
+                  flexShrink: 0,
+                  minWidth: 26,
+                }}
+              >
+                {focusSoundEnabled ? "on" : "off"}
+              </button>
               <span style={{ fontSize: 9, width: 34, color: pomodoroRunning ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.25)" }}>Focus</span>
               <div style={{ flex: 1, height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}>
                 <div style={{ width: (pomodoroPhase === "work" ? (pomodoroSeconds / 1500) * 100 : pomodoroPhase === "breakPending" ? 100 : 0) + "%", height: "100%", background: pomodoroRunning ? "linear-gradient(90deg, #dc2626, #f97316)" : "rgba(255,255,255,0.2)", borderRadius: 4, transition: "width 0.5s, background 0.2s" }} />
@@ -1022,6 +1087,27 @@ export default function CalendarTaskApp() {
               </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, opacity: pomodoroRunning && pomodoroPhase === "break" ? 1 : 0.45, transition: "opacity 0.2s" }}>
+              <button
+                type="button"
+                title={breakSoundEnabled ? "Break sound on — click to disable" : "Break sound off — click to enable"}
+                onClick={() => setBreakSoundEnabled((v) => !v)}
+                style={{
+                  background: breakSoundEnabled ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${breakSoundEnabled ? "rgba(37,99,235,0.45)" : "rgba(255,255,255,0.12)"}`,
+                  borderRadius: 4,
+                  padding: "1px 5px",
+                  fontSize: 8,
+                  fontWeight: 600,
+                  color: breakSoundEnabled ? "#93c5fd" : "rgba(255,255,255,0.25)",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  lineHeight: 1.3,
+                  flexShrink: 0,
+                  minWidth: 26,
+                }}
+              >
+                {breakSoundEnabled ? "on" : "off"}
+              </button>
               <span style={{ fontSize: 9, width: 34, color: "rgba(255,255,255,0.35)" }}>Break</span>
               <div style={{ flex: 1, height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}>
                 <div style={{ width: (pomodoroPhase === "break" ? (pomodoroSeconds / 300) * 100 : 0) + "%", height: "100%", background: pomodoroRunning ? "linear-gradient(90deg, #2563eb, #7c3aed)" : "rgba(255,255,255,0.2)", borderRadius: 4, transition: "width 0.5s, background 0.2s" }} />
