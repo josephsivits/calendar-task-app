@@ -120,13 +120,17 @@ Calendar: selected day is solid orange; selected week is tinted orange; current 
 
 | Context | Keys |
 |---------|------|
-| Task / attachment card focused | **Enter** or **Space** — select |
-| Card action buttons (✓ ✕ ▼) | **Tab** to focus; **Enter** / **Space** activates |
+| Anywhere (not typing) | **← / →** — move focus between columns (Tasks → Widgets → Attachments → Completed) |
+| Tasks list | **↑ / ↓** — move highlight cursor between cards; **Enter** / **Space** — select the highlighted card |
+| Attachments / Completed lists | **↑ / ↓** — move between cards (selects the highlighted attachment) |
+| Focused card | **Tab** — reach that card’s action buttons only (other cards are skipped) |
+| Card / button focused | **Enter** or **Space** — activate |
 | Confirm dialogs | **Tab** cycles Cancel / Confirm; **Enter** activates focused button; **Escape** cancels |
 | Description edit | **Enter** saves; **Escape** cancels without saving |
 | Attachment rename | **Enter** saves |
+| Text fields | Arrow keys move the caret as usual |
 
-Focus rings use an orange outline (`:focus-visible`).
+The active column gets a subtle orange inset highlight. Focus rings use an orange outline.
 
 ---
 

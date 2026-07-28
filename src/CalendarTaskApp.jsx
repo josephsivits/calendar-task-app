@@ -96,6 +96,15 @@ function createTonePlayer() {
 const audio = createTonePlayer();
 const DragCtx = { dragIdx: null };
 
+const NAV_COLUMNS = ["tasks", "widgets", "attachments", "completed"];
+
+function isTypingTarget(el) {
+  if (!el || !(el instanceof Element)) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return !!el.isContentEditable;
+}
+
 /* Reusable play/pause control — same look for 300s timer and pomodoro */
 function PlayPauseButton({ running, onToggle, style }) {
   return (
@@ -237,6 +246,24 @@ export default function CalendarTaskApp() {
   const [importMsg, setImportMsg] = useState(null);
   const importRef = useRef(null);
   const [isToday, setIsToday] = useState(true);
+
+  /* column / list keyboard navigation */
+  const [navColumn, setNavColumn] = useState("tasks");
+  const [focusedTaskIdx, setFocusedTaskIdx] = useState(0);
+  const [focusedAttIdx, setFocusedAttIdx] = useState(0);
+  const [focusedCompletedIdx, setFocusedCompletedIdx] = useState(0);
+  const taskCardRefs = useRef([]);
+  const attCardRefs = useRef([]);
+  const completedCardRefs = useRef([]);
+  const widgetsColRef = useRef(null);
+  const navColumnRef = useRef(navColumn);
+  navColumnRef.current = navColumn;
+  const focusedTaskIdxRef = useRef(focusedTaskIdx);
+  focusedTaskIdxRef.current = focusedTaskIdx;
+  const focusedAttIdxRef = useRef(focusedAttIdx);
+  focusedAttIdxRef.current = focusedAttIdx;
+  const focusedCompletedIdxRef = useRef(focusedCompletedIdx);
+  focusedCompletedIdxRef.current = focusedCompletedIdx;
 
   /* ═══ HYDRATION & SYNC ═══ */
   const hydrated = useRef(false);
@@ -570,6 +597,126 @@ export default function CalendarTaskApp() {
   const pomodoroLabel = pomodoroPhase === "breakPending" ? "Break Pending" : pomodoroPhase === "break" ? "Break" : "Focus";
   const circles = useMemo(() => { const arr = []; for (let i = 0; i < 300; i++) arr.push(i < timerSeconds); return arr; }, [timerSeconds]);
 
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const filteredCompletedRef = useRef(filteredCompleted);
+  filteredCompletedRef.current = filteredCompleted;
+  const overlayOpenRef = useRef(false);
+  overlayOpenRef.current = !!(deleteDialog || completeDialog || deleteAttDialog || zoomAtt || showMdPreview);
+
+  const focusTaskAt = (idx) => {
+    const list = tasksRef.current;
+    setNavColumn("tasks");
+    if (!list.length) return;
+    const i = Math.max(0, Math.min(list.length - 1, idx));
+    setFocusedTaskIdx(i);
+    requestAnimationFrame(() => {
+      const el = taskCardRefs.current[i];
+      el?.focus();
+      el?.scrollIntoView({ block: "nearest" });
+    });
+  };
+  const focusAttAt = (idx) => {
+    const list = attachmentsRef.current;
+    setNavColumn("attachments");
+    if (!list.length) {
+      requestAnimationFrame(() => document.querySelector('[data-nav-column="attachments"]')?.focus());
+      return;
+    }
+    const i = Math.max(0, Math.min(list.length - 1, idx));
+    setFocusedAttIdx(i);
+    setSelectedAttId(list[i].id);
+    requestAnimationFrame(() => {
+      const el = attCardRefs.current[i];
+      el?.focus();
+      el?.scrollIntoView({ block: "nearest" });
+    });
+  };
+  const focusCompletedAt = (idx) => {
+    const list = filteredCompletedRef.current;
+    setNavColumn("completed");
+    if (!list.length) {
+      requestAnimationFrame(() => document.querySelector('[data-nav-column="completed"]')?.focus());
+      return;
+    }
+    const i = Math.max(0, Math.min(list.length - 1, idx));
+    setFocusedCompletedIdx(i);
+    requestAnimationFrame(() => {
+      const el = completedCardRefs.current[i];
+      el?.focus();
+      el?.scrollIntoView({ block: "nearest" });
+    });
+  };
+  const focusNavColumn = (col) => {
+    setNavColumn(col);
+    requestAnimationFrame(() => {
+      if (col === "tasks") {
+        if (tasksRef.current.length) focusTaskAt(focusedTaskIdxRef.current);
+        else document.querySelector('[data-nav-column="tasks"]')?.focus();
+      } else if (col === "attachments") {
+        if (attachmentsRef.current.length) focusAttAt(focusedAttIdxRef.current);
+        else document.querySelector('[data-nav-column="attachments"]')?.focus();
+      } else if (col === "completed") {
+        if (filteredCompletedRef.current.length) focusCompletedAt(focusedCompletedIdxRef.current);
+        else document.querySelector('[data-nav-column="completed"]')?.focus();
+      } else if (col === "widgets") {
+        widgetsColRef.current?.focus();
+      }
+    });
+  };
+
+  const focusTaskAtRef = useRef(focusTaskAt);
+  focusTaskAtRef.current = focusTaskAt;
+  const focusAttAtRef = useRef(focusAttAt);
+  focusAttAtRef.current = focusAttAt;
+  const focusCompletedAtRef = useRef(focusCompletedAt);
+  focusCompletedAtRef.current = focusCompletedAt;
+  const focusNavColumnRef = useRef(focusNavColumn);
+  focusNavColumnRef.current = focusNavColumn;
+
+  useEffect(() => {
+    if (focusedTaskIdx >= tasks.length) setFocusedTaskIdx(Math.max(0, tasks.length - 1));
+  }, [tasks.length, focusedTaskIdx]);
+  useEffect(() => {
+    if (focusedAttIdx >= attachments.length) setFocusedAttIdx(Math.max(0, attachments.length - 1));
+  }, [attachments.length, focusedAttIdx]);
+  useEffect(() => {
+    if (focusedCompletedIdx >= filteredCompleted.length) setFocusedCompletedIdx(Math.max(0, filteredCompleted.length - 1));
+  }, [filteredCompleted.length, focusedCompletedIdx]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+      if (overlayOpenRef.current) return;
+      if (isTypingTarget(e.target)) return;
+
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        const cur = NAV_COLUMNS.indexOf(navColumnRef.current);
+        const next = NAV_COLUMNS[(cur + dir + NAV_COLUMNS.length) % NAV_COLUMNS.length];
+        focusNavColumnRef.current(next);
+        return;
+      }
+
+      const col = navColumnRef.current;
+      if (col === "tasks" && tasksRef.current.length) {
+        e.preventDefault();
+        focusTaskAtRef.current(focusedTaskIdxRef.current + (e.key === "ArrowDown" ? 1 : -1));
+      } else if (col === "attachments" && attachmentsRef.current.length) {
+        e.preventDefault();
+        focusAttAtRef.current(focusedAttIdxRef.current + (e.key === "ArrowDown" ? 1 : -1));
+      } else if (col === "completed" && filteredCompletedRef.current.length) {
+        e.preventDefault();
+        focusCompletedAtRef.current(focusedCompletedIdxRef.current + (e.key === "ArrowDown" ? 1 : -1));
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   /* ═══ STYLES ═══ */
   const S = {
     app: { display: "flex", height: "100vh", fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace", background: "#0a0f1a", color: "#e2e8f0", overflow: "hidden", fontSize: 13 },
@@ -602,8 +749,12 @@ export default function CalendarTaskApp() {
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
         textarea:focus, input:focus { outline: 1px solid rgba(249,115,22,0.4); }
         button:focus-visible { outline: 2px solid rgba(249,115,22,0.75); outline-offset: 2px; }
-        [data-focusable-card]:focus { outline: none; }
-        [data-focusable-card]:focus-visible { outline: 2px solid rgba(249,115,22,0.75); outline-offset: 2px; }
+        [data-focusable-card]:focus { outline: 2px solid rgba(249,115,22,0.75); outline-offset: 2px; }
+        [data-nav-column]:focus { outline: none; }
+        [data-nav-column][data-nav-active="true"] {
+          box-shadow: inset 0 0 0 1.5px #c2410c;
+          background: transparent;
+        }
         .md-render h1 { font-size: 16px; font-weight: 800; margin: 12px 0 6px; color: #f97316; }
         .md-render h2 { font-size: 14px; font-weight: 700; margin: 10px 0 4px; color: #fb923c; }
         .md-render h3 { font-size: 12px; font-weight: 700; margin: 8px 0 4px; color: #fdba74; }
@@ -615,26 +766,42 @@ export default function CalendarTaskApp() {
       `}</style>
 
       {/* ═══ COL 1: TASKS ═══ */}
-      <div style={{ ...S.col, flex: "0 0 22%" }}>
+      <div
+        data-nav-column="tasks"
+        data-nav-active={navColumn === "tasks" ? "true" : "false"}
+        tabIndex={-1}
+        style={{ ...S.col, flex: "0 0 22%" }}
+        onFocusCapture={() => setNavColumn("tasks")}
+      >
         <div style={S.colTitle}>Tasks</div>
-        <div style={S.colScroll}>
+        <div style={S.colScroll} role="listbox" aria-label="Tasks">
           {tasks.map((task, idx) => {
             const sel = task.id === selectedTaskId;
             const notesOpen = !!expandedNotes[task.id];
+            const listFocused = focusedTaskIdx === idx;
             return (
               <div key={task.id} style={{ marginBottom: 6 }}>
                 <div
+                  ref={(el) => { taskCardRefs.current[idx] = el; }}
                   data-focusable-card
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={sel}
+                  role="option"
+                  aria-selected={sel}
+                  tabIndex={listFocused ? 0 : -1}
                   aria-label={`Task T${task.id}${task.description ? `: ${task.description}` : ""}`}
                   draggable
                   onDragStart={() => onDragStart(idx)}
                   onDragOver={onDragOver}
                   onDrop={(e) => onDrop(e, idx)}
                   style={{ ...S.taskCard(sel), marginBottom: 0, borderBottomLeftRadius: notesOpen ? 0 : 8, borderBottomRightRadius: notesOpen ? 0 : 8 }}
-                  onClick={() => setSelectedTaskId(task.id)}
+                  onClick={() => {
+                    setSelectedTaskId(task.id);
+                    setFocusedTaskIdx(idx);
+                    setNavColumn("tasks");
+                  }}
+                  onFocus={() => {
+                    setFocusedTaskIdx(idx);
+                    setNavColumn("tasks");
+                  }}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget) return;
                     if (e.key === "Enter" || e.key === " ") {
@@ -646,8 +813,8 @@ export default function CalendarTaskApp() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={S.badge}>T<sub>{task.id}</sub></div>
                     <div style={{ display: "flex", gap: 2 }}>
-                      <button type="button" style={S.iconBtn} title="Complete" onClick={(e) => { e.stopPropagation(); setCompleteDialog(task); }} onKeyDown={(e) => e.stopPropagation()}>{"\u2713"}</button>
-                      <button type="button" style={{ ...S.iconBtn, color: sel ? "#fca5a5" : "#f87171" }} title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteDialog(task); }} onKeyDown={(e) => e.stopPropagation()}>{"\u2715"}</button>
+                      <button type="button" tabIndex={listFocused ? 0 : -1} style={S.iconBtn} title="Complete" onClick={(e) => { e.stopPropagation(); setCompleteDialog(task); }}>{"\u2713"}</button>
+                      <button type="button" tabIndex={listFocused ? 0 : -1} style={{ ...S.iconBtn, color: sel ? "#fca5a5" : "#f87171" }} title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteDialog(task); }}>{"\u2715"}</button>
                     </div>
                   </div>
                   {editingDesc === task.id ? (
@@ -664,10 +831,10 @@ export default function CalendarTaskApp() {
                     <div style={{ ...S.time, fontSize: 14 }}>{fmtTime(task.timeOnTask)}</div>
                     <button
                       type="button"
+                      tabIndex={listFocused ? 0 : -1}
                       title={notesOpen ? "Collapse notepad" : "Expand notepad"}
                       aria-expanded={notesOpen}
                       onClick={(e) => toggleTaskNotes(task.id, e)}
-                      onKeyDown={(e) => e.stopPropagation()}
                       style={{
                         ...S.iconBtn,
                         opacity: 0.85,
@@ -721,7 +888,14 @@ export default function CalendarTaskApp() {
       </div>
 
       {/* ═══ COL 2: WIDGETS ═══ */}
-      <div style={{ ...S.col, flex: "0 0 30%" }}>
+      <div
+        ref={widgetsColRef}
+        data-nav-column="widgets"
+        data-nav-active={navColumn === "widgets" ? "true" : "false"}
+        tabIndex={-1}
+        style={{ ...S.col, flex: "0 0 30%" }}
+        onFocusCapture={() => setNavColumn("widgets")}
+      >
         <div style={S.colTitle}>Widgets</div>
         <div style={S.colScroll}>
 
@@ -855,7 +1029,13 @@ export default function CalendarTaskApp() {
       </div>
 
       {/* ═══ COL 3: ATTACHMENTS + NOTES ═══ */}
-      <div style={{ ...S.col, flex: "0 0 24%" }}>
+      <div
+        data-nav-column="attachments"
+        data-nav-active={navColumn === "attachments" ? "true" : "false"}
+        tabIndex={-1}
+        style={{ ...S.col, flex: "0 0 24%" }}
+        onFocusCapture={() => setNavColumn("attachments")}
+      >
         <div style={S.colTitle}>Attachments & Notes</div>
         <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", textAlign: "center", marginBottom: 8 }}>{currentWeekKey} {"\u2014"} {currentWeekRange}</div>
         <div style={S.colScroll}>
@@ -868,16 +1048,28 @@ export default function CalendarTaskApp() {
           </div>
 
           {/* Attachment list */}
-          {attachments.map((att) => (
+          <div role="listbox" aria-label="Attachments">
+          {attachments.map((att, idx) => {
+            const listFocused = focusedAttIdx === idx;
+            return (
             <div
               key={att.id}
+              ref={(el) => { attCardRefs.current[idx] = el; }}
               data-focusable-card
-              role="button"
-              tabIndex={0}
-              aria-pressed={att.id === selectedAttId}
+              role="option"
+              aria-selected={att.id === selectedAttId}
+              tabIndex={listFocused ? 0 : -1}
               aria-label={`Attachment: ${att.name}`}
               style={S.attCard(att.id === selectedAttId)}
-              onClick={() => setSelectedAttId(att.id)}
+              onClick={() => {
+                setSelectedAttId(att.id);
+                setFocusedAttIdx(idx);
+                setNavColumn("attachments");
+              }}
+              onFocus={() => {
+                setFocusedAttIdx(idx);
+                setNavColumn("attachments");
+              }}
               onKeyDown={(e) => {
                 if (e.target !== e.currentTarget) return;
                 if (e.key === "Enter" || e.key === " ") {
@@ -901,9 +1093,11 @@ export default function CalendarTaskApp() {
                   <div style={{ fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onDoubleClick={(e) => { e.stopPropagation(); setEditingAttName(att.id); }} title={att.name}>{att.name}</div>
                 )}
               </div>
-              <button style={{ ...S.iconBtn, color: "#f87171", fontSize: 11 }} onClick={(e) => { e.stopPropagation(); setDeleteAttDialog(att); }}>{"\u2715"}</button>
+              <button type="button" tabIndex={listFocused ? 0 : -1} style={{ ...S.iconBtn, color: "#f87171", fontSize: 11 }} onClick={(e) => { e.stopPropagation(); setDeleteAttDialog(att); }}>{"\u2715"}</button>
             </div>
-          ))}
+            );
+          })}
+          </div>
 
           {/* Small inline preview */}
           {selectedAtt && (
@@ -938,24 +1132,50 @@ export default function CalendarTaskApp() {
       </div>
 
       {/* ═══ COL 4: COMPLETED ═══ */}
-      <div style={{ ...S.col, flex: "0 0 24%", borderRight: "none" }}>
+      <div
+        data-nav-column="completed"
+        data-nav-active={navColumn === "completed" ? "true" : "false"}
+        tabIndex={-1}
+        style={{ ...S.col, flex: "0 0 24%", borderRight: "none" }}
+        onFocusCapture={() => setNavColumn("completed")}
+      >
         <div style={S.colTitle}>Completed</div>
         <div style={{ textAlign: "center", marginBottom: 8, fontSize: 9, color: "rgba(255,255,255,0.25)" }}>{fmtDateDisplay(selectedDate)}</div>
-        <div style={S.colScroll}>
+        <div style={S.colScroll} role="listbox" aria-label="Completed tasks">
           {filteredCompleted.length === 0 ? (
             <div style={{ textAlign: "center", padding: 24, fontSize: 10, color: "rgba(255,255,255,0.12)" }}>No completed tasks for this date.</div>
-          ) : filteredCompleted.map((ct) => {
+          ) : filteredCompleted.map((ct, idx) => {
             const noteKey = `c-${ct.id}-${ct.completedAt}`;
             const notesOpen = !!expandedNotes[noteKey];
+            const listFocused = focusedCompletedIdx === idx;
             return (
               <div key={noteKey} style={{ marginBottom: 6 }}>
-                <div style={{ ...S.completedCard, marginBottom: 0, borderBottomLeftRadius: notesOpen ? 0 : 8, borderBottomRightRadius: notesOpen ? 0 : 8 }}>
+                <div
+                  ref={(el) => { completedCardRefs.current[idx] = el; }}
+                  data-focusable-card
+                  role="option"
+                  aria-selected={listFocused}
+                  tabIndex={listFocused ? 0 : -1}
+                  aria-label={`Completed task T${ct.id}${ct.description ? `: ${ct.description}` : ""}`}
+                  style={{ ...S.completedCard, marginBottom: 0, borderBottomLeftRadius: notesOpen ? 0 : 8, borderBottomRightRadius: notesOpen ? 0 : 8, cursor: "pointer" }}
+                  onClick={() => {
+                    setFocusedCompletedIdx(idx);
+                    setNavColumn("completed");
+                  }}
+                  onFocus={() => {
+                    setFocusedCompletedIdx(idx);
+                    setNavColumn("completed");
+                  }}
+                >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={S.badge}>T<sub>{ct.id}</sub></div>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       <div style={{ ...S.time, fontSize: 13 }}>{fmtTime(ct.timeOnTask)}</div>
                       <button
+                        type="button"
+                        tabIndex={listFocused ? 0 : -1}
                         title={notesOpen ? "Collapse notepad" : "Expand notepad"}
+                        aria-expanded={notesOpen}
                         onClick={(e) => toggleTaskNotes(noteKey, e)}
                         style={{
                           ...S.iconBtn,
