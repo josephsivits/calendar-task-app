@@ -341,6 +341,198 @@ export function exportAllMarkdown(activeTasks, completedTasks) {
   return files;
 }
 
+/** CRC32 table for ZIP (store method, no compression). */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[i] = c;
+  }
+  return t;
+})();
+
+function crc32(data) {
+  let c = 0xffffffff;
+  for (let i = 0; i < data.length; i++) c = CRC_TABLE[(c ^ data[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function u16(n) {
+  const b = new Uint8Array(2);
+  new DataView(b.buffer).setUint16(0, n, true);
+  return b;
+}
+
+function u32(n) {
+  const b = new Uint8Array(4);
+  new DataView(b.buffer).setUint32(0, n, true);
+  return b;
+}
+
+function concatBytes(parts) {
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) { out.set(p, off); off += p.length; }
+  return out;
+}
+
+/** Build an uncompressed ZIP Blob preserving folder paths (e.g. notes/2026-W14.md). */
+export function filesToZipBlob(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const nameBytes = encoder.encode(file.name);
+    const data = typeof file.content === "string" ? encoder.encode(file.content) : file.content;
+    const crc = crc32(data);
+    const size = data.length;
+
+    const localHeader = concatBytes([
+      u32(0x04034b50), // local file header signature
+      u16(20),         // version needed
+      u16(0),          // flags
+      u16(0),          // compression: store
+      u16(0), u16(0),  // time, date
+      u32(crc),
+      u32(size),
+      u32(size),
+      u16(nameBytes.length),
+      u16(0),          // extra length
+      nameBytes,
+    ]);
+
+    localParts.push(localHeader, data);
+
+    const centralHeader = concatBytes([
+      u32(0x02014b50), // central directory signature
+      u16(20),         // version made by
+      u16(20),         // version needed
+      u16(0),          // flags
+      u16(0),          // compression: store
+      u16(0), u16(0),  // time, date
+      u32(crc),
+      u32(size),
+      u32(size),
+      u16(nameBytes.length),
+      u16(0),          // extra length
+      u16(0),          // comment length
+      u16(0),          // disk start
+      u16(0),          // internal attrs
+      u32(0),          // external attrs
+      u32(offset),     // local header offset
+      nameBytes,
+    ]);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + size;
+  }
+
+  const centralDir = concatBytes(centralParts);
+  const endRecord = concatBytes([
+    u32(0x06054b50),
+    u16(0), u16(0),
+    u16(files.length),
+    u16(files.length),
+    u32(centralDir.length),
+    u32(offset),
+    u16(0),
+  ]);
+
+  return new Blob([concatBytes([...localParts, centralDir, endRecord])], { type: "application/zip" });
+}
+
+/** Collect all markdown files and return a downloadable ZIP Blob. */
+export function exportAllMarkdownZip(activeTasks, completedTasks) {
+  return filesToZipBlob(exportAllMarkdown(activeTasks, completedTasks));
+}
+
+async function inflateRaw(data) {
+  const ds = new DecompressionStream("deflate-raw");
+  const stream = new Blob([data]).stream().pipeThrough(ds);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** Parse a ZIP ArrayBuffer into { name, content } text files (store + deflate). */
+export async function parseZip(buffer) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65558); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("Invalid ZIP file");
+
+  const count = view.getUint16(eocd + 8, true);
+  let offset = view.getUint32(eocd + 16, true);
+  const decoder = new TextDecoder();
+  const files = [];
+
+  for (let i = 0; i < count; i++) {
+    if (view.getUint32(offset, true) !== 0x02014b50) throw new Error("Corrupt ZIP central directory");
+    const method = view.getUint16(offset + 10, true);
+    const compSize = view.getUint32(offset + 20, true);
+    const nameLen = view.getUint16(offset + 28, true);
+    const extraLen = view.getUint16(offset + 30, true);
+    const commentLen = view.getUint16(offset + 32, true);
+    const localOff = view.getUint32(offset + 42, true);
+    const name = decoder.decode(bytes.subarray(offset + 46, offset + 46 + nameLen));
+    offset += 46 + nameLen + extraLen + commentLen;
+
+    if (name.endsWith("/")) continue;
+
+    const localNameLen = view.getUint16(localOff + 26, true);
+    const localExtraLen = view.getUint16(localOff + 28, true);
+    const dataStart = localOff + 30 + localNameLen + localExtraLen;
+    let data = bytes.subarray(dataStart, dataStart + compSize);
+
+    if (method === 8) data = await inflateRaw(data);
+    else if (method !== 0) throw new Error(`Unsupported ZIP compression method: ${method}`);
+
+    files.push({ name, content: decoder.decode(data) });
+  }
+  return files;
+}
+
+/** Map any nested path to tasks.md or notes/YYYY-Www.md when possible. */
+export function normalizeImportPath(name) {
+  const parts = name.replace(/\\/g, "/").split("/").filter(Boolean);
+  const base = parts[parts.length - 1] || "";
+  const notesIdx = parts.findIndex((p) => p === "notes");
+  if (notesIdx >= 0 && /^\d{4}-W\d{2}\.md$/.test(parts[notesIdx + 1] || "")) {
+    return `notes/${parts[notesIdx + 1]}`;
+  }
+  if (base === "tasks.md") return "tasks.md";
+  if (/^\d{4}-W\d{2}\.md$/.test(base)) return `notes/${base}`;
+  return null;
+}
+
+/**
+ * Apply exported markdown files into localStorage / return parsed tasks.
+ * Accepts paths like tasks.md, notes/2026-W14.md, or nested equivalents.
+ */
+export function importMarkdownFiles(files) {
+  let tasksResult = null;
+  let notesImported = 0;
+
+  for (const f of files) {
+    const path = normalizeImportPath(f.name);
+    if (!path) continue;
+    if (path === "tasks.md") {
+      tasksResult = markdownToTasks(f.content);
+      saveTasks(tasksResult.activeTasks, tasksResult.completedTasks);
+    } else if (/^notes\/\d{4}-W\d{2}\.md$/.test(path)) {
+      const wk = path.slice("notes/".length, -".md".length);
+      localStorage.setItem(noteKey(wk), f.content);
+      notesImported++;
+    }
+  }
+
+  return { tasksResult, notesImported };
+}
+
 /* ─────────── Simple Markdown → HTML renderer ─────────── */
 export function renderMarkdown(md) {
   if (!md || !md.trim()) return "<p style='opacity:0.3'><em>Empty</em></p>";

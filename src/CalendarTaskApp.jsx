@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
   saveTasks, loadTasks, saveNote, loadNote, loadNoteRaw,
-  saveSettings, loadSettings, exportAllMarkdown, importTasksMarkdown,
+  saveSettings, loadSettings, exportAllMarkdownZip,
+  importMarkdownFiles, parseZip,
   saveAttachments, loadAttachments, renderMarkdown,
   weekKey, weekRange, fmtTime, tasksToMarkdown,
 } from "./markdownDb.js";
@@ -299,6 +300,14 @@ export default function CalendarTaskApp() {
   const updateTaskNotes = (id, notes) => {
     setTasks((prev) => prev.map((t) => t.id === id ? { ...t, notes } : t));
   };
+  const updateCompletedNotes = (dateKey, completedAt, id, notes) => {
+    setCompletedTasks((prev) => ({
+      ...prev,
+      [dateKey]: (prev[dateKey] || []).map((ct) =>
+        ct.id === id && ct.completedAt === completedAt ? { ...ct, notes } : ct
+      ),
+    }));
+  };
 
   /* ═══ ATTACHMENTS ═══ */
   const handleFileSelect = (e) => {
@@ -377,35 +386,66 @@ export default function CalendarTaskApp() {
   /* ═══ EXPORT / IMPORT ═══ */
   const handleExport = () => {
     syncToStorage();
-    const files = exportAllMarkdown(tasks, completedTasks);
-    for (const f of files) {
-      const blob = new Blob([f.content], { type: "text/markdown" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = f.name.replace("/", "_"); a.click();
-      URL.revokeObjectURL(url);
-    }
+    const blob = exportAllMarkdownZip(tasks, completedTasks);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "calendar-export.zip";
+    a.click();
+    URL.revokeObjectURL(url);
   };
-  const handleImport = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const content = reader.result;
-      if (file.name === "tasks.md") {
-        const { activeTasks, completedTasks: ct } = importTasksMarkdown(content);
-        setTasks(activeTasks); setCompletedTasks(ct);
-        const maxId = Math.max(0, ...activeTasks.map((t) => t.id), ...Object.values(ct).flat().map((t) => t.id));
-        setNextTaskId(maxId + 1);
-        setImportMsg("Imported " + activeTasks.length + " active, " + Object.values(ct).flat().length + " completed");
-      } else if (file.name.match(/^\d{4}-W\d{2}\.md$/)) {
-        localStorage.setItem("md:notes:" + file.name.replace(".md", ""), content);
-        setNoteContent(loadNote(selectedDate));
-        setImportMsg("Imported notes for " + file.name.replace(".md", ""));
-      } else { setImportMsg("Expected tasks.md or YYYY-Www.md"); }
-      setTimeout(() => setImportMsg(null), 3000);
-    };
-    reader.readAsText(file);
+  const handleImport = async (e) => {
+    const fileList = [...(e.target.files || [])];
     e.target.value = "";
+    if (!fileList.length) return;
+
+    try {
+      let files = [];
+      const zipFile = fileList.find((f) => /\.zip$/i.test(f.name) || f.type === "application/zip");
+
+      if (zipFile) {
+        files = await parseZip(await zipFile.arrayBuffer());
+      } else {
+        files = await Promise.all(fileList.map(async (f) => ({
+          name: f.webkitRelativePath || f.name,
+          content: await f.text(),
+        })));
+      }
+
+      const { tasksResult, notesImported } = importMarkdownFiles(files);
+      if (!tasksResult && notesImported === 0) {
+        setImportMsg("Expected calendar-export.zip, tasks.md, or notes/YYYY-Www.md");
+        setTimeout(() => setImportMsg(null), 3000);
+        return;
+      }
+
+      if (tasksResult) {
+        const { activeTasks, completedTasks: ct } = tasksResult;
+        setTasks(activeTasks);
+        setCompletedTasks(ct);
+        const maxId = Math.max(
+          0,
+          ...activeTasks.map((t) => t.id),
+          ...Object.values(ct).flat().map((t) => t.id),
+        );
+        setNextTaskId(maxId + 1);
+      }
+      if (notesImported > 0) setNoteContent(loadNote(selectedDate));
+
+      const parts = [];
+      if (tasksResult) {
+        parts.push(
+          `${tasksResult.activeTasks.length} active`,
+          `${Object.values(tasksResult.completedTasks).flat().length} completed`,
+        );
+      }
+      if (notesImported > 0) parts.push(`${notesImported} note week${notesImported === 1 ? "" : "s"}`);
+      setImportMsg("Imported " + parts.join(", "));
+      setTimeout(() => setImportMsg(null), 3000);
+    } catch (err) {
+      setImportMsg(err?.message || "Import failed");
+      setTimeout(() => setImportMsg(null), 4000);
+    }
   };
 
   /* ═══ DERIVED ═══ */
@@ -723,7 +763,7 @@ export default function CalendarTaskApp() {
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
               <button style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)", flex: 1 }} onClick={handleExport}>{"\u2193"} Export</button>
               <button style={{ ...S.btn("rgba(168,85,247,0.12)"), border: "1px solid rgba(168,85,247,0.25)", flex: 1 }} onClick={() => importRef.current?.click()}>{"\u2191"} Import</button>
-              <input ref={importRef} type="file" accept=".md" hidden onChange={handleImport} />
+              <input ref={importRef} type="file" accept=".md,.zip,application/zip" multiple hidden onChange={handleImport} />
             </div>
             {importMsg && <div style={{ fontSize: 9, color: "#86efac", textAlign: "center", marginTop: 6, padding: "4px 8px", background: "rgba(34,197,94,0.1)", borderRadius: 6 }}>{importMsg}</div>}
           </div>
@@ -737,15 +777,68 @@ export default function CalendarTaskApp() {
         <div style={S.colScroll}>
           {filteredCompleted.length === 0 ? (
             <div style={{ textAlign: "center", padding: 24, fontSize: 10, color: "rgba(255,255,255,0.12)" }}>No completed tasks for this date.</div>
-          ) : filteredCompleted.map((ct) => (
-            <div key={ct.id + "-" + ct.completedAt} style={S.completedCard}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={S.badge}>T<sub>{ct.id}</sub></div>
-                <div style={{ ...S.time, fontSize: 13 }}>{fmtTime(ct.timeOnTask)}</div>
+          ) : filteredCompleted.map((ct) => {
+            const noteKey = `c-${ct.id}-${ct.completedAt}`;
+            const notesOpen = !!expandedNotes[noteKey];
+            return (
+              <div key={noteKey} style={{ marginBottom: 6 }}>
+                <div style={{ ...S.completedCard, marginBottom: 0, borderBottomLeftRadius: notesOpen ? 0 : 8, borderBottomRightRadius: notesOpen ? 0 : 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={S.badge}>T<sub>{ct.id}</sub></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <div style={{ ...S.time, fontSize: 13 }}>{fmtTime(ct.timeOnTask)}</div>
+                      <button
+                        title={notesOpen ? "Collapse notepad" : "Expand notepad"}
+                        onClick={(e) => toggleTaskNotes(noteKey, e)}
+                        style={{
+                          ...S.iconBtn,
+                          opacity: 0.85,
+                          color: "#86efac",
+                          fontSize: 10,
+                          padding: "2px 4px",
+                          transform: notesOpen ? "rotate(180deg)" : "none",
+                          transition: "transform 0.15s",
+                        }}
+                      >
+                        {"\u25BC"}
+                      </button>
+                    </div>
+                  </div>
+                  <div style={S.desc}>{ct.description || <em style={{ opacity: 0.5 }}>No description</em>}</div>
+                </div>
+                {notesOpen && (
+                  <div
+                    style={{
+                      background: "rgba(134,239,172,0.18)",
+                      border: "1px solid #22c55e",
+                      borderTop: "none",
+                      borderBottomLeftRadius: 8,
+                      borderBottomRightRadius: 8,
+                      padding: 8,
+                      minHeight: 88,
+                    }}
+                  >
+                    <textarea
+                      value={ct.notes || ""}
+                      placeholder="Task notes..."
+                      onChange={(e) => updateCompletedNotes(selectedDate, ct.completedAt, ct.id, e.target.value)}
+                      style={{
+                        ...S.input,
+                        minHeight: 72,
+                        resize: "vertical",
+                        background: "transparent",
+                        border: "none",
+                        color: "#dcfce7",
+                        fontSize: 11,
+                        lineHeight: 1.45,
+                        padding: 2,
+                      }}
+                    />
+                  </div>
+                )}
               </div>
-              <div style={S.desc}>{ct.description || <em style={{ opacity: 0.5 }}>No description</em>}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
