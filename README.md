@@ -26,7 +26,7 @@ notes/2026-W15.md
 
 ### tasks.md format
 
-```markdown
+````markdown
 # Tasks
 
 ## Active
@@ -35,6 +35,10 @@ notes/2026-W15.md
 - **Description:** Build the login page
 - **Time:** 01:24:37 (5077s)
 - **Started:** 2026-04-01T10:00:00.000Z
+- **Notes:**
+```notes
+Wire up auth middleware first.
+```
 
 ## Completed
 
@@ -44,7 +48,10 @@ notes/2026-W15.md
 - **Description:** Setup project
 - **Time:** 02:10:00 (7800s)
 - **Completed:** 2026-04-01T17:00:00.000Z
-```
+- **Notes:** (empty)
+````
+
+Per-task notepad text lives in a `notes` fenced block (or `(empty)` when blank). Older `tasks.md` files without a Notes field still import with `notes: ""`.
 
 ### notes/YYYY-Www.md format
 

@@ -40,6 +40,15 @@ export function fmtTime(s) {
   return `${pad2(Math.floor(s / 3600))}:${pad2(Math.floor((s % 3600) / 60))}:${pad2(s % 60)}`;
 }
 
+/* ── Per-task notepad notes (multi-line via fenced block) ── */
+function notesToMarkdown(notes) {
+  if (!notes) return `- **Notes:** (empty)\n`;
+  let ticks = 3;
+  while (notes.includes("`".repeat(ticks))) ticks++;
+  const fence = "`".repeat(ticks);
+  return `- **Notes:**\n${fence}notes\n${notes}\n${fence}\n`;
+}
+
 /* ─────────── TASKS → Markdown ─────────── */
 export function tasksToMarkdown(activeTasks, completedTasks) {
   let md = `# Tasks\n\n`;
@@ -54,6 +63,7 @@ export function tasksToMarkdown(activeTasks, completedTasks) {
       md += `- **Description:** ${t.description || "(empty)"}\n`;
       md += `- **Time:** ${fmtTime(t.timeOnTask)} (${t.timeOnTask}s)\n`;
       md += `- **Started:** ${t.startDate}\n`;
+      md += notesToMarkdown(t.notes);
       md += `\n`;
     }
   }
@@ -70,6 +80,7 @@ export function tasksToMarkdown(activeTasks, completedTasks) {
         md += `- **Description:** ${ct.description || "(empty)"}\n`;
         md += `- **Time:** ${fmtTime(ct.timeOnTask)} (${ct.timeOnTask}s)\n`;
         md += `- **Completed:** ${ct.completedAt}\n`;
+        md += notesToMarkdown(ct.notes);
         md += `\n`;
       }
     }
@@ -90,8 +101,27 @@ export function markdownToTasks(md) {
   let currentDateKey = null;
   let currentTask = null;
   let parsingCompleted = false;
+  let notesFence = null; // e.g. "```" while collecting notepad body
+  let notesLines = [];
+
+  const flushNotes = () => {
+    if (!currentTask || notesFence === null) return;
+    currentTask.notes = notesLines.join("\n");
+    notesFence = null;
+    notesLines = [];
+  };
 
   for (const line of lines) {
+    // Inside a notes fenced block — collect until matching close fence
+    if (notesFence !== null) {
+      if (line.trim() === notesFence) {
+        flushNotes();
+      } else {
+        notesLines.push(line);
+      }
+      continue;
+    }
+
     const trimmed = line.trim();
 
     // Section headers
@@ -104,6 +134,7 @@ export function markdownToTasks(md) {
       // Flush the last Active task before leaving that section; otherwise it
       // stays as currentTask and the first #### in Completed wrongly files it
       // under the first completed date (todo / in-progress tasks "become" done).
+      flushNotes();
       if (currentTask && section === "active") {
         activeTasks.push(currentTask);
         currentTask = null;
@@ -117,6 +148,7 @@ export function markdownToTasks(md) {
     const taskMatch = trimmed.match(/^#{3,4}\s+T(\d+)$/);
     if (taskMatch) {
       // Save previous task
+      flushNotes();
       if (currentTask) {
         if (parsingCompleted && currentDateKey) {
           if (!completedTasks[currentDateKey]) completedTasks[currentDateKey] = [];
@@ -130,6 +162,7 @@ export function markdownToTasks(md) {
         description: "",
         timeOnTask: 0,
         startDate: new Date().toISOString(),
+        notes: "",
       };
       continue;
     }
@@ -139,6 +172,7 @@ export function markdownToTasks(md) {
       const dateMatch = trimmed.match(/^### (\d{4}-\d{2}-\d{2})$/);
       if (dateMatch) {
         // Save previous task if any
+        flushNotes();
         if (currentTask && currentDateKey) {
           if (!completedTasks[currentDateKey]) completedTasks[currentDateKey] = [];
           completedTasks[currentDateKey].push(currentTask);
@@ -172,10 +206,32 @@ export function markdownToTasks(md) {
         currentTask.dateKey = currentDateKey;
         continue;
       }
+      // Notes: empty, inline, or opening of a ```notes fence on the next line
+      const notesEmpty = trimmed.match(/^-\s+\*\*Notes:\*\*\s+\(empty\)$/);
+      if (notesEmpty) {
+        currentTask.notes = "";
+        continue;
+      }
+      const notesInline = trimmed.match(/^-\s+\*\*Notes:\*\*\s+(.+)$/);
+      if (notesInline) {
+        currentTask.notes = notesInline[1];
+        continue;
+      }
+      if (trimmed.match(/^-\s+\*\*Notes:\*\*\s*$/)) {
+        // Expect a fenced block on a following line
+        continue;
+      }
+      const fenceOpen = trimmed.match(/^(`{3,})notes\s*$/);
+      if (fenceOpen) {
+        notesFence = fenceOpen[1];
+        notesLines = [];
+        continue;
+      }
     }
   }
 
   // Save final task
+  flushNotes();
   if (currentTask) {
     if (parsingCompleted && currentDateKey) {
       if (!completedTasks[currentDateKey]) completedTasks[currentDateKey] = [];

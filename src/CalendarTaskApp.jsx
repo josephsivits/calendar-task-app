@@ -128,6 +128,7 @@ export default function CalendarTaskApp() {
 
   /* UI */
   const [editingDesc, setEditingDesc] = useState(null);
+  const [expandedNotes, setExpandedNotes] = useState({});
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [completeDialog, setCompleteDialog] = useState(null);
   const [deleteAttDialog, setDeleteAttDialog] = useState(null);
@@ -262,24 +263,41 @@ export default function CalendarTaskApp() {
   const addTask = () => {
     const id = nextTaskId;
     setNextTaskId((n) => n + 1);
-    setTasks((prev) => [...prev, { id, description: "", timeOnTask: 0, startDate: new Date().toISOString(), endDate: null }]);
+    setTasks((prev) => [...prev, { id, description: "", timeOnTask: 0, startDate: new Date().toISOString(), endDate: null, notes: "" }]);
     setTimeout(() => setEditingDesc(id), 50);
   };
   const confirmDelete = () => {
     if (!deleteDialog) return;
     setTasks((prev) => prev.filter((t) => t.id !== deleteDialog.id));
     if (selectedTaskId === deleteDialog.id) setSelectedTaskId(null);
+    setExpandedNotes((prev) => {
+      const next = { ...prev };
+      delete next[deleteDialog.id];
+      return next;
+    });
     setDeleteDialog(null);
   };
   const confirmComplete = () => {
     if (!completeDialog) return;
     const task = completeDialog;
     const dateKey = todayStr();
-    const entry = { id: task.id, description: task.description, timeOnTask: task.timeOnTask, completedAt: new Date().toISOString(), dateKey };
+    const entry = { id: task.id, description: task.description, timeOnTask: task.timeOnTask, notes: task.notes || "", completedAt: new Date().toISOString(), dateKey };
     setCompletedTasks((prev) => ({ ...prev, [dateKey]: [...(prev[dateKey] || []), entry] }));
     setTasks((prev) => prev.filter((t) => t.id !== task.id));
     if (selectedTaskId === task.id) setSelectedTaskId(null);
+    setExpandedNotes((prev) => {
+      const next = { ...prev };
+      delete next[task.id];
+      return next;
+    });
     setCompleteDialog(null);
+  };
+  const toggleTaskNotes = (id, e) => {
+    e.stopPropagation();
+    setExpandedNotes((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const updateTaskNotes = (id, notes) => {
+    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, notes } : t));
   };
 
   /* ═══ ATTACHMENTS ═══ */
@@ -445,26 +463,84 @@ export default function CalendarTaskApp() {
         <div style={S.colScroll}>
           {tasks.map((task, idx) => {
             const sel = task.id === selectedTaskId;
+            const notesOpen = !!expandedNotes[task.id];
             return (
-              <div key={task.id} draggable onDragStart={() => onDragStart(idx)} onDragOver={onDragOver} onDrop={(e) => onDrop(e, idx)} style={S.taskCard(sel)} onClick={() => setSelectedTaskId(task.id)}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div style={S.badge}>T<sub>{task.id}</sub></div>
-                  <div style={{ display: "flex", gap: 2 }}>
-                    <button style={S.iconBtn} title="Complete" onClick={(e) => { e.stopPropagation(); setCompleteDialog(task); }}>{"\u2713"}</button>
-                    <button style={{ ...S.iconBtn, color: sel ? "#fca5a5" : "#f87171" }} title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteDialog(task); }}>{"\u2715"}</button>
+              <div key={task.id} style={{ marginBottom: 6 }}>
+                <div
+                  draggable
+                  onDragStart={() => onDragStart(idx)}
+                  onDragOver={onDragOver}
+                  onDrop={(e) => onDrop(e, idx)}
+                  style={{ ...S.taskCard(sel), marginBottom: 0, borderBottomLeftRadius: notesOpen ? 0 : 8, borderBottomRightRadius: notesOpen ? 0 : 8 }}
+                  onClick={() => setSelectedTaskId(task.id)}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={S.badge}>T<sub>{task.id}</sub></div>
+                    <div style={{ display: "flex", gap: 2 }}>
+                      <button style={S.iconBtn} title="Complete" onClick={(e) => { e.stopPropagation(); setCompleteDialog(task); }}>{"\u2713"}</button>
+                      <button style={{ ...S.iconBtn, color: sel ? "#fca5a5" : "#f87171" }} title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteDialog(task); }}>{"\u2715"}</button>
+                    </div>
+                  </div>
+                  {editingDesc === task.id ? (
+                    <input autoFocus style={S.input} defaultValue={task.description} placeholder="Task description..."
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={(e) => { setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, description: e.target.value } : t)); setEditingDesc(null); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditingDesc(null); }} />
+                  ) : (
+                    <div style={S.desc} onDoubleClick={(e) => { e.stopPropagation(); setEditingDesc(task.id); }}>
+                      {task.description || <span style={{ opacity: 0.4, fontStyle: "italic" }}>Double-click to edit...</span>}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 3 }}>
+                    <div style={{ ...S.time, fontSize: 14 }}>{fmtTime(task.timeOnTask)}</div>
+                    <button
+                      title={notesOpen ? "Collapse notepad" : "Expand notepad"}
+                      onClick={(e) => toggleTaskNotes(task.id, e)}
+                      style={{
+                        ...S.iconBtn,
+                        opacity: 0.85,
+                        color: sel ? "#86efac" : "#4ade80",
+                        fontSize: 10,
+                        padding: "2px 4px",
+                        transform: notesOpen ? "rotate(180deg)" : "none",
+                        transition: "transform 0.15s",
+                      }}
+                    >
+                      {"\u25BC"}
+                    </button>
                   </div>
                 </div>
-                {editingDesc === task.id ? (
-                  <input autoFocus style={S.input} defaultValue={task.description} placeholder="Task description..."
+                {notesOpen && (
+                  <div
                     onClick={(e) => e.stopPropagation()}
-                    onBlur={(e) => { setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, description: e.target.value } : t)); setEditingDesc(null); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditingDesc(null); }} />
-                ) : (
-                  <div style={S.desc} onDoubleClick={(e) => { e.stopPropagation(); setEditingDesc(task.id); }}>
-                    {task.description || <span style={{ opacity: 0.4, fontStyle: "italic" }}>Double-click to edit...</span>}
+                    style={{
+                      background: "rgba(134,239,172,0.18)",
+                      border: sel ? "1px solid #22c55e" : "1px solid rgba(34,197,94,0.35)",
+                      borderTop: "none",
+                      borderBottomLeftRadius: 8,
+                      borderBottomRightRadius: 8,
+                      padding: 8,
+                      minHeight: 88,
+                    }}
+                  >
+                    <textarea
+                      value={task.notes || ""}
+                      placeholder="Task notes..."
+                      onChange={(e) => updateTaskNotes(task.id, e.target.value)}
+                      style={{
+                        ...S.input,
+                        minHeight: 72,
+                        resize: "vertical",
+                        background: "transparent",
+                        border: "none",
+                        color: "#dcfce7",
+                        fontSize: 11,
+                        lineHeight: 1.45,
+                        padding: 2,
+                      }}
+                    />
                   </div>
                 )}
-                <div style={{ ...S.time, marginTop: 3, fontSize: 14 }}>{fmtTime(task.timeOnTask)}</div>
               </div>
             );
           })}
