@@ -96,6 +96,32 @@ function createTonePlayer() {
 const audio = createTonePlayer();
 const DragCtx = { dragIdx: null };
 
+/* Reusable play/pause control — same look for 300s timer and pomodoro */
+function PlayPauseButton({ running, onToggle, style }) {
+  return (
+    <button
+      onClick={onToggle}
+      style={{
+        background: running ? "rgba(239,68,68,0.25)" : "rgba(34,197,94,0.25)",
+        border: `1px solid ${running ? "rgba(239,68,68,0.5)" : "rgba(34,197,94,0.5)"}`,
+        borderRadius: 6,
+        padding: "5px 14px",
+        color: "#e2e8f0",
+        cursor: "pointer",
+        fontSize: 16,
+        fontWeight: 600,
+        fontFamily: "inherit",
+        flexShrink: 0,
+        lineHeight: 1,
+        transition: "all 0.15s",
+        ...style,
+      }}
+    >
+      {running ? "\u23F8" : "\u25B6"}
+    </button>
+  );
+}
+
 const DIALOG_STYLE = {
   overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(4px)" },
   box: { background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 22, maxWidth: 400, width: "90%" },
@@ -176,13 +202,17 @@ export default function CalendarTaskApp() {
   const [nextTaskId, setNextTaskId] = useState(0);
   const [nextAttId, setNextAttId] = useState(0);
 
-  /* timer */
+  /* timer (300s) — independent of pomodoro */
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
+  const timerRef = useRef(null);
+
+  /* pomodoro — own running state, does not drive the 300s timer */
   const [pomodoroSeconds, setPomodoroSeconds] = useState(0);
   const [pomodoroPhase, setPomodoroPhase] = useState("work");
   const [pomodoroCount, setPomodoroCount] = useState(0);
-  const timerRef = useRef(null);
+  const [pomodoroRunning, setPomodoroRunning] = useState(false);
+  const pomodoroRef = useRef(null);
 
   /* notes + attachments (per-week) */
   const [noteContent, setNoteContent] = useState("");
@@ -277,7 +307,7 @@ export default function CalendarTaskApp() {
     setIsToday(selectedDate === todayStr());
   }, [selectedDate]);
 
-  /* ═══ TIMER ═══ */
+  /* ═══ 300s TIMER (task time) ═══ */
   useEffect(() => {
     if (timerRunning) {
       timerRef.current = setInterval(() => {
@@ -293,6 +323,15 @@ export default function CalendarTaskApp() {
         setTasks((prev) =>
           prev.map((t) => t.id === selectedTaskId ? { ...t, timeOnTask: t.timeOnTask + 1 } : t)
         );
+      }, 1000);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [timerRunning, selectedTaskId]);
+
+  /* ═══ POMODORO (independent) ═══ */
+  useEffect(() => {
+    if (pomodoroRunning) {
+      pomodoroRef.current = setInterval(() => {
         setPomodoroPhase((phase) => {
           if (phase === "breakPending") return phase;
           setPomodoroSeconds((ps) => {
@@ -301,11 +340,13 @@ export default function CalendarTaskApp() {
             if (next >= limit) {
               if (phase === "work") {
                 audio.pomodoroComplete();
+                setPomodoroRunning(false);
                 setPomodoroPhase("breakPending");
                 setPomodoroCount((c) => c + 1);
                 return 0;
               } else {
                 audio.breakComplete();
+                setPomodoroRunning(false);
                 setPomodoroPhase("work");
                 return 0;
               }
@@ -316,15 +357,20 @@ export default function CalendarTaskApp() {
         });
       }, 1000);
     }
-    return () => clearInterval(timerRef.current);
-  }, [timerRunning, selectedTaskId]);
+    return () => clearInterval(pomodoroRef.current);
+  }, [pomodoroRunning]);
 
   const toggleTimer = () => {
-    if (!timerRunning && pomodoroPhase === "breakPending") {
+    setTimerRunning((r) => !r);
+    syncToStorage();
+  };
+
+  const togglePomodoro = () => {
+    if (!pomodoroRunning && pomodoroPhase === "breakPending") {
       setPomodoroPhase("break");
       setPomodoroSeconds(0);
     }
-    setTimerRunning((r) => !r);
+    setPomodoroRunning((r) => !r);
     syncToStorage();
   };
 
@@ -695,16 +741,7 @@ export default function CalendarTaskApp() {
             <span style={{ ...S.chip, flex: 1, justifyContent: "center", fontSize: 11 }}>
               {fmtDateDisplay(selectedDate)}
             </span>
-            <button
-              onClick={toggleTimer}
-              style={{
-                ...S.btn(timerRunning ? "rgba(239,68,68,0.25)" : "rgba(34,197,94,0.25)"),
-                border: `1px solid ${timerRunning ? "rgba(239,68,68,0.5)" : "rgba(34,197,94,0.5)"}`,
-                padding: "5px 14px", fontSize: 16, flexShrink: 0, lineHeight: 1,
-              }}
-            >
-              {timerRunning ? "\u23F8" : "\u25B6"}
-            </button>
+            <PlayPauseButton running={timerRunning} onToggle={toggleTimer} />
           </div>
 
           {/* --- SYNC --- */}
@@ -763,7 +800,16 @@ export default function CalendarTaskApp() {
 
           {/* --- Pomodoro --- */}
           <div style={{ ...S.section, borderColor: "rgba(220,38,38,0.12)" }}>
-            <div style={{ ...S.sectionLabel, color: "rgba(220,38,38,0.5)" }}>Pomodoro {"\u2014"} {pomodoroLabel}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, gap: 6 }}>
+              <div style={{ ...S.sectionLabel, color: "rgba(220,38,38,0.5)", marginBottom: 0, flex: 1 }}>
+                Pomodoro {"\u2014"} {pomodoroLabel}
+              </div>
+              <PlayPauseButton
+                running={pomodoroRunning}
+                onToggle={togglePomodoro}
+                style={{ padding: "3px 10px", fontSize: 13 }}
+              />
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
               <span style={{ fontSize: 9, width: 34, color: "rgba(255,255,255,0.35)" }}>Focus</span>
               <div style={{ flex: 1, height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}>
