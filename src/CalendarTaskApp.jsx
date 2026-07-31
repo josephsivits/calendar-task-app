@@ -6,6 +6,7 @@ import {
   saveAttachments, loadAttachments, renderMarkdown,
   weekKey, weekRange, fmtTime, tasksToMarkdown,
 } from "./markdownDb.js";
+import { useLayoutMode } from "./layoutMode.js";
 
 /* ---- helpers ---- */
 const todayStr = () => {
@@ -238,17 +239,8 @@ export default function CalendarTaskApp() {
   const [soundDemoOpen, setSoundDemoOpen] = useState(false);
   const syncClickRef = useRef({ count: 0, timer: null });
 
-  /* responsive: stack columns vertically below 555px */
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== "undefined" && window.innerWidth < 555
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 554px)");
-    const onChange = () => setIsMobile(mq.matches);
-    onChange();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+  /* responsive: columns vs stacked rows (see layoutMode.js) */
+  const { isStacked: isMobile } = useLayoutMode();
 
   /* column / list keyboard navigation */
   const [navColumn, setNavColumn] = useState("tasks");

@@ -30,18 +30,27 @@ The app is four sections:
 | **Attachments & Notes** | Weekly images + free-form weekly notes; Export / Import |
 | **Completed** | Tasks completed on the selected calendar date |
 
-On desktop (≥555px) they sit side-by-side as columns. On mobile (<555px) they stack vertically and the page scrolls.
+On desktop they sit side-by-side as columns. On phones (and narrow windows) they stack vertically and the page scrolls.
 
-### Mobile
+### Mobile / layout mode
 
-At widths under **555px** the layout switches from columns to a single scrolling column:
+Layout is decided by `src/layoutMode.js`, not width alone:
+
+| Signal | Stacks to rows when… |
+|--------|----------------------|
+| Narrow viewport | CSS width **&lt; 555px** |
+| Touch handheld | Primary input is touch (`pointer: coarse` + `hover: none`) **and** width **&lt; 900px** |
+
+The second rule covers Android phones whose “display size” settings report a CSS width above 555px. Desktop with a mouse stays in columns down to 555px.
+
+Order when stacked:
 
 1. Tasks
 2. Widgets
 3. Attachments & Notes
 4. Completed
 
-Controls and behavior are the same as desktop. Use the phone’s browser at `http://localhost:5173` (or your deployed URL) — no separate mobile build.
+Controls and behavior are the same as desktop. Use the phone’s browser at `http://localhost:5173` (or your deployed URL) — no separate mobile build. On Termux/Android, run `npm run dev -- --host` if you need to open the app from another device on the network.
 
 ### Typical flow
 
