@@ -21,14 +21,27 @@ Static output in `dist/`.
 
 ## User guide
 
-The app is four columns:
+The app is four sections:
 
-| Column | Purpose |
-|--------|---------|
+| Section | Purpose |
+|---------|---------|
 | **Tasks** | Active tasks — select one to track time against it |
 | **Widgets** | Date, play/pause, sync, calendar, 300s timer, Pomodoro |
 | **Attachments & Notes** | Weekly images + free-form weekly notes; Export / Import |
 | **Completed** | Tasks completed on the selected calendar date |
+
+On desktop (≥555px) they sit side-by-side as columns. On mobile (<555px) they stack vertically and the page scrolls.
+
+### Mobile
+
+At widths under **555px** the layout switches from columns to a single scrolling column:
+
+1. Tasks
+2. Widgets
+3. Attachments & Notes
+4. Completed
+
+Controls and behavior are the same as desktop. Use the phone’s browser at `http://localhost:5173` (or your deployed URL) — no separate mobile build.
 
 ### Typical flow
 
@@ -61,7 +74,7 @@ Time on task only increases while the timer is running **and** a task is selecte
 
 ### Completing tasks
 
-Completing always files the task under **today’s date**, even if another day is selected on the calendar. The Completed column filters by the selected date.
+Completing always files the task under **today’s date**, even if another day is selected on the calendar. The Completed section filters by the selected date.
 
 ---
 
@@ -120,7 +133,7 @@ Calendar: selected day is solid orange; selected week is tinted orange; current 
 
 | Context | Keys |
 |---------|------|
-| Anywhere (not typing) | **← / →** — move focus between columns (Tasks → Widgets → Attachments → Completed) |
+| Anywhere (not typing) | **← / →** — move focus between sections (Tasks → Widgets → Attachments → Completed) |
 | Tasks list | **↑ / ↓** — move highlight cursor between cards; **Enter** / **Space** — select the highlighted card |
 | Attachments / Completed lists | **↑ / ↓** — move between cards (selects the highlighted attachment) |
 | Focused card | **Tab** — reach that card’s action buttons only (other cards are skipped) |
@@ -130,7 +143,7 @@ Calendar: selected day is solid orange; selected week is tinted orange; current 
 | Attachment rename | **Enter** saves |
 | Text fields | Arrow keys move the caret as usual |
 
-The active column gets a subtle orange inset highlight. Focus rings use an orange outline.
+The active section gets a subtle orange inset highlight. Focus rings use an orange outline.
 
 ---
 

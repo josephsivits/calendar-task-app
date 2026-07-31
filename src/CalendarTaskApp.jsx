@@ -238,6 +238,18 @@ export default function CalendarTaskApp() {
   const [soundDemoOpen, setSoundDemoOpen] = useState(false);
   const syncClickRef = useRef({ count: 0, timer: null });
 
+  /* responsive: stack columns vertically below 555px */
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth < 555
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 554px)");
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   /* column / list keyboard navigation */
   const [navColumn, setNavColumn] = useState("tasks");
   const [focusedTaskIdx, setFocusedTaskIdx] = useState(0);
@@ -726,9 +738,33 @@ export default function CalendarTaskApp() {
 
   /* ═══ STYLES ═══ */
   const S = {
-    app: { display: "flex", height: "100vh", fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace", background: "#0a0f1a", color: "#e2e8f0", overflow: "hidden", fontSize: 13 },
-    col: { flex: 1, display: "flex", flexDirection: "column", padding: "10px 10px", overflow: "hidden", borderRight: "1px dashed rgba(255,255,255,0.08)" },
-    colScroll: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: "2px 4px 2px 2px" },
+    app: {
+      display: "flex",
+      flexDirection: isMobile ? "column" : "row",
+      height: "100dvh",
+      fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
+      background: "#0a0f1a",
+      color: "#e2e8f0",
+      overflow: isMobile ? "auto" : "hidden",
+      fontSize: 13,
+    },
+    col: {
+      flex: isMobile ? "0 0 auto" : 1,
+      display: "flex",
+      flexDirection: "column",
+      width: isMobile ? "100%" : undefined,
+      minHeight: isMobile ? "auto" : 0,
+      padding: "10px 10px",
+      overflow: isMobile ? "visible" : "hidden",
+      borderRight: isMobile ? "none" : "1px dashed rgba(255,255,255,0.08)",
+      borderBottom: isMobile ? "1px dashed rgba(255,255,255,0.08)" : "none",
+    },
+    colScroll: {
+      flex: isMobile ? "0 0 auto" : 1,
+      overflowY: isMobile ? "visible" : "auto",
+      overflowX: "hidden",
+      padding: "2px 4px 2px 2px",
+    },
     colTitle: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 2.5, marginBottom: 10, color: "rgba(255,255,255,0.3)", textAlign: "center" },
     taskCard: (sel) => ({ background: sel ? "linear-gradient(135deg, #166534, #15803d)" : "rgba(22,101,52,0.12)", border: sel ? "1px solid #22c55e" : "1px solid rgba(34,197,94,0.25)", borderRadius: 8, padding: "9px 11px", marginBottom: 6, cursor: "pointer", transition: "all 0.15s", color: sel ? "#fff" : "#86efac" }),
     completedCard: { background: "linear-gradient(135deg, #166534, #15803d)", border: "1px solid #22c55e", borderRadius: 8, padding: "9px 11px", marginBottom: 6, color: "#fff" },
@@ -786,7 +822,7 @@ export default function CalendarTaskApp() {
         data-nav-column="tasks"
         data-nav-active={navColumn === "tasks" ? "true" : "false"}
         tabIndex={-1}
-        style={{ ...S.col, flex: "0 0 22%" }}
+        style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 22%" }}
         onFocusCapture={() => setNavColumn("tasks")}
       >
         <div style={S.colTitle}>Tasks</div>
@@ -909,7 +945,7 @@ export default function CalendarTaskApp() {
         data-nav-column="widgets"
         data-nav-active={navColumn === "widgets" ? "true" : "false"}
         tabIndex={-1}
-        style={{ ...S.col, flex: "0 0 30%" }}
+        style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 30%" }}
         onFocusCapture={() => setNavColumn("widgets")}
       >
         <div style={S.colTitle}>Widgets</div>
@@ -1128,7 +1164,7 @@ export default function CalendarTaskApp() {
         data-nav-column="attachments"
         data-nav-active={navColumn === "attachments" ? "true" : "false"}
         tabIndex={-1}
-        style={{ ...S.col, flex: "0 0 24%" }}
+        style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 24%" }}
         onFocusCapture={() => setNavColumn("attachments")}
       >
         <div style={S.colTitle}>Attachments & Notes</div>
@@ -1231,7 +1267,7 @@ export default function CalendarTaskApp() {
         data-nav-column="completed"
         data-nav-active={navColumn === "completed" ? "true" : "false"}
         tabIndex={-1}
-        style={{ ...S.col, flex: "0 0 24%", borderRight: "none" }}
+        style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 24%", borderRight: "none", borderBottom: isMobile ? "none" : undefined }}
         onFocusCapture={() => setNavColumn("completed")}
       >
         <div style={S.colTitle}>Completed</div>
