@@ -132,10 +132,15 @@ function isTypingTarget(el) {
 }
 
 /* Reusable play/pause control — same look for 300s timer and pomodoro */
-function PlayPauseButton({ running, onToggle, style }) {
+function PlayPauseButton({ running, onToggle, style, id, className = "", ariaLabel = "Toggle timer" }) {
   return (
     <button
+      id={id}
+      className={`calendar-task-app__timer-toggle ${className}`.trim()}
+      type="button"
       onClick={onToggle}
+      aria-label={ariaLabel}
+      aria-pressed={running}
       style={{
         background: running ? "rgba(239,68,68,0.25)" : "rgba(34,197,94,0.25)",
         border: `1px solid ${running ? "rgba(239,68,68,0.5)" : "rgba(34,197,94,0.5)"}`,
@@ -164,7 +169,16 @@ const DIALOG_STYLE = {
 };
 
 /** Accessible confirm dialog: Tab cycles actions, Enter activates focused button, Escape cancels. */
-function ConfirmDialog({ title, children, confirmLabel, confirmStyle, onConfirm, onCancel, initialFocus = "confirm" }) {
+function ConfirmDialog({
+  dialogId = "confirm-dialog",
+  title,
+  children,
+  confirmLabel,
+  confirmStyle,
+  onConfirm,
+  onCancel,
+  initialFocus = "confirm",
+}) {
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
   const onCancelRef = useRef(onCancel);
@@ -206,19 +220,45 @@ function ConfirmDialog({ title, children, confirmLabel, confirmStyle, onConfirm,
   }, [initialFocus]);
 
   return (
-    <div style={DIALOG_STYLE.overlay} onClick={onCancel}>
+    <div
+      id={`${dialogId}-overlay`}
+      className="calendar-task-app__modal-overlay"
+      style={DIALOG_STYLE.overlay}
+      onClick={onCancel}
+    >
       <div
+        id={dialogId}
+        className="calendar-task-app__modal calendar-task-app__confirm-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="confirm-dialog-title"
+        aria-labelledby={`${dialogId}-title`}
+        aria-describedby={`${dialogId}-description`}
         style={DIALOG_STYLE.box}
         onClick={(e) => e.stopPropagation()}
       >
-        <div id="confirm-dialog-title" style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{title}</div>
-        {children}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button ref={cancelRef} type="button" style={DIALOG_STYLE.btn()} onClick={onCancel}>Cancel</button>
-          <button ref={confirmRef} type="button" style={{ ...DIALOG_STYLE.btn(), ...confirmStyle }} onClick={onConfirm}>{confirmLabel}</button>
+        <h2 id={`${dialogId}-title`} className="calendar-task-app__modal-title" style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{title}</h2>
+        <div id={`${dialogId}-description`} className="calendar-task-app__modal-description">
+          {children}
+        </div>
+        <div className="calendar-task-app__modal-actions" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            ref={cancelRef}
+            className="calendar-task-app__button calendar-task-app__button--cancel"
+            type="button"
+            style={DIALOG_STYLE.btn()}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            ref={confirmRef}
+            className="calendar-task-app__button calendar-task-app__button--confirm"
+            type="button"
+            style={{ ...DIALOG_STYLE.btn(), ...confirmStyle }}
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </button>
         </div>
       </div>
     </div>
@@ -288,6 +328,9 @@ export default function CalendarTaskApp() {
   const [isToday, setIsToday] = useState(true);
   const [soundDemoOpen, setSoundDemoOpen] = useState(false);
   const syncClickRef = useRef({ count: 0, timer: null });
+  const modalRef = useRef(null);
+  const modalInitialFocusRef = useRef(null);
+  const modalRestoreFocusRef = useRef(null);
 
   /* responsive: columns vs stacked rows (see layoutMode.js) */
   const { isStacked: isMobile } = useLayoutMode();
@@ -542,7 +585,19 @@ export default function CalendarTaskApp() {
     if (selectedAttId === deleteAttDialog.id) setSelectedAttId(null);
     setDeleteAttDialog(null);
   };
-  const openZoom = (att) => { setZoomAtt(att); setZoomLevel(1); };
+  const rememberModalFocus = () => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) modalRestoreFocusRef.current = active;
+  };
+  const openZoom = (att) => {
+    rememberModalFocus();
+    setZoomAtt(att);
+    setZoomLevel(1);
+  };
+  const openTasksMarkdown = () => {
+    rememberModalFocus();
+    setShowTasksMd(true);
+  };
 
   /* ═══ DRAG ═══ */
   const onDragStart = (idx) => { DragCtx.dragIdx = idx; };
@@ -586,6 +641,27 @@ export default function CalendarTaskApp() {
   const selectDay = (day) => {
     if (!day) return;
     setSelectedDate(calYear + "-" + String(calMonth + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0"));
+  };
+  const calendarDayIso = (day) => (
+    day
+      ? `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+      : null
+  );
+  const calendarDayLabel = (day) => {
+    const iso = calendarDayIso(day);
+    if (!iso) return "";
+    const label = new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+    const state = [
+      iso === selectedDate ? "selected" : "",
+      iso === todayStr() ? "today" : "",
+      isSelectedWeek(day) ? "in selected week" : "",
+    ].filter(Boolean);
+    return state.length ? `${label}, ${state.join(", ")}` : label;
   };
   const goToday = () => {
     const td = todayStr();
@@ -678,6 +754,53 @@ export default function CalendarTaskApp() {
   filteredCompletedRef.current = filteredCompleted;
   const overlayOpenRef = useRef(false);
   overlayOpenRef.current = !!(deleteDialog || completeDialog || deleteAttDialog || zoomAtt || showTasksMd);
+
+  useEffect(() => {
+    const modalIsOpen = Boolean(zoomAtt) || showTasksMd;
+    if (!modalIsOpen) return undefined;
+
+    const previousFocus = modalRestoreFocusRef.current;
+    const modal = modalRef.current;
+    const focusableSelector = [
+      "button:not([disabled])",
+      "[href]",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(",");
+
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (zoomAtt) setZoomAtt(null);
+        if (showTasksMd) setShowTasksMd(false);
+        return;
+      }
+      if (e.key !== "Tab" || !modal) return;
+
+      const focusables = [...modal.querySelectorAll(focusableSelector)];
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    const frame = requestAnimationFrame(() => modalInitialFocusRef.current?.focus());
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKey, true);
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+      modalRestoreFocusRef.current = null;
+    };
+  }, [Boolean(zoomAtt), showTasksMd]);
 
   const focusTaskAt = (idx) => {
     const list = tasksRef.current;
@@ -878,12 +1001,31 @@ export default function CalendarTaskApp() {
   };
 
   return (
-    <div style={S.app}>
+    <main
+      id="calendar-task-app"
+      className="calendar-task-app"
+      aria-label="Calendar Task App"
+      style={S.app}
+    >
       <style>{`
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
+        .calendar-task-app__sr-only {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border: 0;
+        }
+        .calendar-task-app button {
+          -webkit-tap-highlight-color: transparent;
+        }
         textarea:focus, input:focus {
           outline: none;
           box-shadow: inset 0 0 0 1.5px rgba(249,115,22,0.85);
@@ -967,35 +1109,53 @@ export default function CalendarTaskApp() {
       `}</style>
 
       {/* ═══ COL 1: TASKS ═══ */}
-      <div
+      <section
         data-nav-column="tasks"
         data-nav-active={navColumn === "tasks" ? "true" : "false"}
+        id="tasks-panel"
+        className="calendar-task-app__panel calendar-task-app__panel--tasks"
+        role="region"
+        aria-labelledby="tasks-panel-title"
         tabIndex={-1}
         style={{ ...S.col, flex: isMobile ? "0 0 auto" : panelOpen.tasks ? "22 1 0" : "0 0 11%", transition: "flex 0.2s ease" }}
         onFocusCapture={() => setNavColumn("tasks")}
       >
         <button
+          id="tasks-panel-toggle"
+          className="calendar-task-app__panel-toggle"
           type="button"
           data-panel-toggle
           title={panelOpen.tasks ? "Collapse Tasks panel" : "Expand Tasks panel"}
           aria-expanded={panelOpen.tasks}
+          aria-controls={panelOpen.tasks ? "tasks-panel-content" : undefined}
+          aria-label={`${panelOpen.tasks ? "Collapse" : "Expand"} Tasks panel`}
           onClick={() => togglePanel("tasks")}
           style={{ ...S.iconBtn, ...S.colTitle, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, opacity: 1, padding: "0 0 10px", color: "rgba(255,255,255,0.3)" }}
         >
-          <span style={{ transform: panelOpen.tasks ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
-          <span>Tasks ({tasks.length})</span>
+          <span aria-hidden="true" style={{ transform: panelOpen.tasks ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+          <span id="tasks-panel-title" className="calendar-task-app__panel-title">Tasks ({tasks.length})</span>
         </button>
         {panelOpen.tasks && (
           <>
-        <div style={S.colScroll} role="listbox" aria-label="Tasks">
+        <div
+          id="tasks-panel-content"
+          className="calendar-task-app__panel-content calendar-task-app__task-list"
+          style={S.colScroll}
+          role="listbox"
+          aria-label="Tasks"
+          aria-orientation="vertical"
+          aria-activedescendant={tasks[focusedTaskIdx] ? `task-card-${tasks[focusedTaskIdx].id}` : undefined}
+        >
           {tasks.map((task, idx) => {
             const sel = task.id === selectedTaskId;
             const notesOpen = !!expandedNotes[task.id];
             const listFocused = focusedTaskIdx === idx;
             return (
-              <div key={task.id} style={{ marginBottom: 6 }}>
+              <div key={task.id} className="calendar-task-app__task-item" style={{ marginBottom: 6 }}>
                 <div
                   ref={(el) => { taskCardRefs.current[idx] = el; }}
+                  id={`task-card-${task.id}`}
+                  className={`calendar-task-app__task-card${sel ? " calendar-task-app__task-card--selected" : ""}`}
                   data-focusable-card
                   role="option"
                   aria-selected={sel}
@@ -1024,29 +1184,66 @@ export default function CalendarTaskApp() {
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <div style={S.badge}>T<sub>{task.id}</sub></div>
-                    <div style={{ display: "flex", gap: 2 }}>
-                      <button type="button" tabIndex={listFocused ? 0 : -1} style={S.iconBtn} title="Complete" onClick={(e) => { e.stopPropagation(); setCompleteDialog(task); }}>{"\u2713"}</button>
-                      <button type="button" tabIndex={listFocused ? 0 : -1} style={{ ...S.iconBtn, color: sel ? "#fca5a5" : "#f87171" }} title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteDialog(task); }}>{"\u2715"}</button>
+                    <div className="calendar-task-app__task-badge" style={S.badge}>T<sub>{task.id}</sub></div>
+                    <div className="calendar-task-app__task-actions" style={{ display: "flex", gap: 2 }}>
+                      <button
+                        id={`complete-task-${task.id}`}
+                        className="calendar-task-app__icon-button calendar-task-app__task-complete"
+                        type="button"
+                        tabIndex={listFocused ? 0 : -1}
+                        style={S.iconBtn}
+                        title="Complete task"
+                        aria-label={`Complete task T${task.id}`}
+                        onClick={(e) => { e.stopPropagation(); setCompleteDialog(task); }}
+                      >
+                        {"\u2713"}
+                      </button>
+                      <button
+                        id={`delete-task-${task.id}`}
+                        className="calendar-task-app__icon-button calendar-task-app__task-delete"
+                        type="button"
+                        tabIndex={listFocused ? 0 : -1}
+                        style={{ ...S.iconBtn, color: sel ? "#fca5a5" : "#f87171" }}
+                        title="Delete task"
+                        aria-label={`Delete task T${task.id}`}
+                        onClick={(e) => { e.stopPropagation(); setDeleteDialog(task); }}
+                      >
+                        {"\u2715"}
+                      </button>
                     </div>
                   </div>
                   {editingDesc === task.id ? (
-                    <input autoFocus style={S.input} defaultValue={task.description} placeholder="Task description..."
+                    <input
+                      id={`task-description-${task.id}`}
+                      className="calendar-task-app__task-description-input"
+                      autoFocus
+                      aria-label={`Description for task T${task.id}`}
+                      style={S.input}
+                      defaultValue={task.description}
+                      placeholder="Task description..."
                       onClick={(e) => e.stopPropagation()}
                       onBlur={(e) => { setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, description: e.target.value } : t)); setEditingDesc(null); }}
                       onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditingDesc(null); }} />
                   ) : (
-                    <div style={S.desc} onDoubleClick={(e) => { e.stopPropagation(); setEditingDesc(task.id); }}>
+                    <div
+                      className="calendar-task-app__task-description"
+                      style={S.desc}
+                      onDoubleClick={(e) => { e.stopPropagation(); setEditingDesc(task.id); }}
+                    >
                       {task.description || <span style={{ opacity: 0.4, fontStyle: "italic" }}>Double-click to edit...</span>}
                     </div>
                   )}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 3 }}>
-                    <div style={{ ...S.time, fontSize: 14 }}>{fmtTime(task.timeOnTask)}</div>
+                    <div className="calendar-task-app__task-time" style={{ ...S.time, fontSize: 14 }}>{fmtTime(task.timeOnTask)}</div>
                     <button
+                      id={`toggle-task-notes-${task.id}`}
+                      className="calendar-task-app__icon-button calendar-task-app__task-notes-toggle"
                       type="button"
                       tabIndex={listFocused ? 0 : -1}
                       title={notesOpen ? "Collapse notepad" : "Expand notepad"}
                       aria-expanded={notesOpen}
+                      aria-controls={`task-notes-${task.id}`}
+                      aria-label={`${notesOpen ? "Collapse" : "Expand"} notes for task T${task.id}`}
                       onClick={(e) => toggleTaskNotes(task.id, e)}
                       style={{
                         ...S.iconBtn,
@@ -1064,6 +1261,8 @@ export default function CalendarTaskApp() {
                 </div>
                 {notesOpen && (
                   <div
+                    id={`task-notes-${task.id}`}
+                    className="calendar-task-app__task-notes"
                     onClick={(e) => e.stopPropagation()}
                     style={{
                       background: "rgba(134,239,172,0.18)",
@@ -1076,7 +1275,10 @@ export default function CalendarTaskApp() {
                     }}
                   >
                     <textarea
+                      id={`task-notes-input-${task.id}`}
+                      className="calendar-task-app__task-notes-input"
                       value={task.notes || ""}
+                      aria-label={`Notes for task T${task.id}`}
                       placeholder="Task notes..."
                       onChange={(e) => updateTaskNotes(task.id, e.target.value)}
                       style={{
@@ -1097,38 +1299,58 @@ export default function CalendarTaskApp() {
             );
           })}
         </div>
-        <button style={{ ...S.btn("rgba(34,197,94,0.15)"), border: "1px dashed rgba(34,197,94,0.4)", marginTop: 6, width: "100%" }} onClick={addTask}>+ Add Task</button>
+        <button
+          id="add-task"
+          className="calendar-task-app__button calendar-task-app__add-task"
+          type="button"
+          style={{ ...S.btn("rgba(34,197,94,0.15)"), border: "1px dashed rgba(34,197,94,0.4)", marginTop: 6, width: "100%" }}
+          onClick={addTask}
+        >
+          + Add Task
+        </button>
           </>
         )}
-      </div>
+      </section>
 
       {/* ═══ COL 2: WIDGETS ═══ */}
-      <div
+      <section
         ref={widgetsColRef}
         data-nav-column="widgets"
         data-nav-active={navColumn === "widgets" ? "true" : "false"}
+        id="widgets-panel"
+        className="calendar-task-app__panel calendar-task-app__panel--widgets"
+        role="region"
+        aria-labelledby="widgets-panel-title"
         tabIndex={-1}
         style={{ ...S.col, flex: isMobile ? "0 0 auto" : panelOpen.widgets ? "30 1 0" : "0 0 15%", transition: "flex 0.2s ease" }}
         onFocusCapture={() => setNavColumn("widgets")}
       >
         <button
+          id="widgets-panel-toggle"
+          className="calendar-task-app__panel-toggle"
           type="button"
           data-panel-toggle
           title={panelOpen.widgets ? "Collapse Widgets panel" : "Expand Widgets panel"}
           aria-expanded={panelOpen.widgets}
+          aria-controls={panelOpen.widgets ? "widgets-panel-content" : undefined}
+          aria-label={`${panelOpen.widgets ? "Collapse" : "Expand"} Widgets panel`}
           onClick={() => togglePanel("widgets")}
           style={{ ...S.iconBtn, ...S.colTitle, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, opacity: 1, padding: "0 0 10px", color: "rgba(255,255,255,0.3)" }}
         >
-          <span style={{ transform: panelOpen.widgets ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
-          <span>Widgets</span>
+          <span aria-hidden="true" style={{ transform: panelOpen.widgets ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+          <span id="widgets-panel-title" className="calendar-task-app__panel-title">Widgets</span>
         </button>
         {panelOpen.widgets && (
-          <div style={S.colScroll}>
+          <div id="widgets-panel-content" className="calendar-task-app__panel-content calendar-task-app__widgets" style={S.colScroll}>
 
           {/* --- TOP ROW: Today + Date + Play/Pause --- */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+          <div className="calendar-task-app__widget-toolbar" style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
             <button
+              id="go-today"
+              className="calendar-task-app__button calendar-task-app__go-today"
+              type="button"
               onClick={goToday}
+              aria-label={isToday ? "Today, current date selected" : "Go to today"}
               style={{
                 ...S.btn(isToday ? "rgba(34,197,94,0.2)" : "rgba(249,115,22,0.2)"),
                 border: `1px solid ${isToday ? "rgba(34,197,94,0.5)" : "rgba(249,115,22,0.5)"}`,
@@ -1138,17 +1360,27 @@ export default function CalendarTaskApp() {
             >
               {isToday ? "\u2713 today" : "today"}
             </button>
-            <span style={{ ...S.chip, flex: 1, justifyContent: "center", fontSize: 11 }}>
+            <span id="selected-date-display" className="calendar-task-app__selected-date" style={{ ...S.chip, flex: 1, justifyContent: "center", fontSize: 11 }}>
               {fmtDateDisplay(selectedDate)}
             </span>
-            <PlayPauseButton running={timerRunning} onToggle={toggleTimer} />
+            <PlayPauseButton
+              id="task-timer-toggle"
+              className="calendar-task-app__task-timer-toggle"
+              running={timerRunning}
+              onToggle={toggleTimer}
+              ariaLabel={timerRunning ? "Pause task timer" : "Start task timer"}
+            />
           </div>
 
           {/* --- SYNC --- */}
           <button
+            id="sync-storage"
+            className="calendar-task-app__button calendar-task-app__sync"
             type="button"
             onClick={handleSyncClick}
             title="Triple-click for sound demo"
+            aria-label={dirty ? "Save changes now" : "Saved. Triple-click for sound demo"}
+            aria-live="polite"
             style={{
               ...S.btn(dirty ? "rgba(249,115,22,0.15)" : "rgba(34,197,94,0.1)"),
               border: `1px solid ${dirty ? "rgba(249,115,22,0.4)" : soundDemoOpen ? "rgba(255,255,255,0.35)" : "rgba(34,197,94,0.3)"}`,
@@ -1163,7 +1395,11 @@ export default function CalendarTaskApp() {
           </button>
 
           {soundDemoOpen && (
-            <div style={{
+            <section
+              id="sound-demo"
+              className="calendar-task-app__widget-section calendar-task-app__sound-demo"
+              aria-labelledby="sound-demo-title"
+              style={{
               ...S.section,
               borderColor: "rgba(255,255,255,0.12)",
               marginBottom: 8,
@@ -1172,77 +1408,171 @@ export default function CalendarTaskApp() {
               flexDirection: "column",
               gap: 6,
             }}>
-              <div style={{ ...S.sectionLabel, marginBottom: 0, color: "rgba(255,255,255,0.35)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Sound demo</span>
+              <div className="calendar-task-app__section-heading" style={{ ...S.sectionLabel, marginBottom: 0, color: "rgba(255,255,255,0.35)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span id="sound-demo-title">Sound demo</span>
                 <button
+                  id="close-sound-demo"
+                  className="calendar-task-app__icon-button"
                   type="button"
                   onClick={() => setSoundDemoOpen(false)}
                   style={{ ...S.iconBtn, fontSize: 10, padding: "0 4px", color: "rgba(255,255,255,0.35)" }}
-                  title="Hide"
+                  title="Hide sound demo"
+                  aria-label="Hide sound demo"
                 >
                   {"\u2715"}
                 </button>
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => audio.timerComplete()} style={{ ...S.btn("rgba(249,115,22,0.15)"), border: "1px solid rgba(249,115,22,0.4)", color: "#fb923c", fontSize: 9, padding: "4px 8px" }}>
+              <div className="calendar-task-app__sound-demo-actions" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button id="sound-demo-task-timer" className="calendar-task-app__button" type="button" onClick={() => audio.timerComplete()} style={{ ...S.btn("rgba(249,115,22,0.15)"), border: "1px solid rgba(249,115,22,0.4)", color: "#fb923c", fontSize: 9, padding: "4px 8px" }}>
                   300s · 3
                 </button>
-                <button type="button" onClick={() => audio.pomodoroComplete()} style={{ ...S.btn("rgba(220,38,38,0.15)"), border: "1px solid rgba(220,38,38,0.4)", color: "#fca5a5", fontSize: 9, padding: "4px 8px" }}>
+                <button id="sound-demo-focus" className="calendar-task-app__button" type="button" onClick={() => audio.pomodoroComplete()} style={{ ...S.btn("rgba(220,38,38,0.15)"), border: "1px solid rgba(220,38,38,0.4)", color: "#fca5a5", fontSize: 9, padding: "4px 8px" }}>
                   Focus · 5
                 </button>
-                <button type="button" onClick={() => audio.breakComplete()} style={{ ...S.btn("rgba(37,99,235,0.15)"), border: "1px solid rgba(37,99,235,0.4)", color: "#93c5fd", fontSize: 9, padding: "4px 8px" }}>
+                <button id="sound-demo-break" className="calendar-task-app__button" type="button" onClick={() => audio.breakComplete()} style={{ ...S.btn("rgba(37,99,235,0.15)"), border: "1px solid rgba(37,99,235,0.4)", color: "#93c5fd", fontSize: 9, padding: "4px 8px" }}>
                   Break · 2
                 </button>
               </div>
-            </div>
+            </section>
           )}
 
           {/* --- Calendar --- */}
-          <div style={S.section}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <button style={S.iconBtn} onClick={prevMonth}>{"\u25C2"}</button>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)" }}>
+          <section
+            id="calendar-widget"
+            className="calendar-task-app__widget-section calendar-task-app__calendar"
+            role="region"
+            aria-labelledby="calendar-widget-title"
+            style={S.section}
+          >
+            <div className="calendar-task-app__calendar-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <button
+                id="calendar-previous-month"
+                className="calendar-task-app__icon-button"
+                type="button"
+                style={S.iconBtn}
+                onClick={prevMonth}
+                aria-label="Previous month"
+              >
+                {"\u25C2"}
+              </button>
+              <h2 id="calendar-widget-title" className="calendar-task-app__section-title" style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)" }}>
                 {new Date(calYear, calMonth).toLocaleString("en-US", { month: "long", year: "numeric" })}
-              </span>
-              <button style={S.iconBtn} onClick={nextMonth}>{"\u25B8"}</button>
+              </h2>
+              <button
+                id="calendar-next-month"
+                className="calendar-task-app__icon-button"
+                type="button"
+                style={S.iconBtn}
+                onClick={nextMonth}
+                aria-label="Next month"
+              >
+                {"\u25B8"}
+              </button>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, textAlign: "center" }}>
+            <div
+              id="calendar-grid"
+              className="calendar-task-app__calendar-grid"
+              role="group"
+              aria-labelledby="calendar-widget-title"
+              style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, textAlign: "center" }}
+            >
               {["M", "T", "W", "R", "F", "S", "S"].map((d, i) => (
-                <div key={i} style={{ fontSize: 8, fontWeight: 700, color: "rgba(255,255,255,0.2)", padding: "2px 0" }}>{d}</div>
+                <span
+                  key={i}
+                  className="calendar-task-app__calendar-weekday"
+                  aria-hidden="true"
+                  style={{ fontSize: 8, fontWeight: 700, color: "rgba(255,255,255,0.2)", padding: "2px 0" }}
+                >
+                  {d}
+                </span>
               ))}
               {calDays.map((day, i) => (
-                <div key={i} onClick={() => selectDay(day)} style={{
-                  padding: "4px 0", borderRadius: 6, fontSize: 10, fontWeight: 600,
-                  cursor: day ? "pointer" : "default",
-                  background: isDaySelected(day) ? "#f97316" : isSelectedWeek(day) ? "rgba(249,115,22,0.1)" : isCurrentWeek(day) ? "rgba(147,197,253,0.08)" : "transparent",
-                  color: isDaySelected(day) ? "#fff" : day ? "rgba(255,255,255,0.55)" : "transparent",
-                  transition: "all 0.15s",
-                }}>{day || ""}</div>
+                day ? (
+                  <button
+                    key={i}
+                    id={`calendar-day-${calendarDayIso(day)}`}
+                    className={`calendar-task-app__calendar-day${isDaySelected(day) ? " calendar-task-app__calendar-day--selected" : ""}`}
+                    type="button"
+                    aria-label={calendarDayLabel(day)}
+                    aria-pressed={isDaySelected(day)}
+                    aria-current={calendarDayIso(day) === todayStr() ? "date" : undefined}
+                    onClick={() => selectDay(day)}
+                    style={{
+                      padding: "4px 0", borderRadius: 6, fontSize: 10, fontWeight: 600,
+                      cursor: "pointer", border: "none", fontFamily: "inherit",
+                      background: isDaySelected(day) ? "#f97316" : isSelectedWeek(day) ? "rgba(249,115,22,0.1)" : isCurrentWeek(day) ? "rgba(147,197,253,0.08)" : "transparent",
+                      color: isDaySelected(day) ? "#fff" : "rgba(255,255,255,0.55)",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {day}
+                  </button>
+                ) : (
+                  <span key={i} className="calendar-task-app__calendar-day calendar-task-app__calendar-day--empty" aria-hidden="true" />
+                )
               ))}
             </div>
-            <div style={{ display: "flex", gap: 6, marginTop: 6, justifyContent: "center" }}>
-              <input type="date" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); const d = new Date(e.target.value + "T12:00:00"); setCalMonth(d.getMonth()); setCalYear(d.getFullYear()); }} style={{ ...S.input, width: "auto", fontSize: 9, padding: "2px 6px" }} />
+            <div className="calendar-task-app__calendar-date-picker" style={{ display: "flex", gap: 6, marginTop: 6, justifyContent: "center" }}>
+              <label className="calendar-task-app__sr-only" htmlFor="calendar-date-input">Select date</label>
+              <input
+                id="calendar-date-input"
+                className="calendar-task-app__date-input"
+                type="date"
+                value={selectedDate}
+                aria-label="Select calendar date"
+                onChange={(e) => { setSelectedDate(e.target.value); const d = new Date(e.target.value + "T12:00:00"); setCalMonth(d.getMonth()); setCalYear(d.getFullYear()); }}
+                style={{ ...S.input, width: "auto", fontSize: 9, padding: "2px 6px" }}
+              />
             </div>
-          </div>
+          </section>
 
           {/* --- 300s Timer Grid --- */}
-          <div style={{ ...S.section, borderColor: "rgba(249,115,22,0.12)" }}>
-            <div style={{ ...S.sectionLabel, color: "rgba(249,115,22,0.5)" }}>300s Timer {"\u2014"} {timerSeconds}/300</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(30, 1fr)", gap: 1.5 }}>
+          <section
+            id="task-timer"
+            className="calendar-task-app__widget-section calendar-task-app__timer"
+            role="region"
+            aria-labelledby="task-timer-title"
+            style={{ ...S.section, borderColor: "rgba(249,115,22,0.12)" }}
+          >
+            <h2 id="task-timer-title" className="calendar-task-app__section-title" style={{ ...S.sectionLabel, color: "rgba(249,115,22,0.5)" }}>300s Timer {"\u2014"} {timerSeconds}/300</h2>
+            <div
+              id="task-timer-progress"
+              className="calendar-task-app__timer-progress"
+              role="progressbar"
+              aria-label="Task timer progress"
+              aria-valuemin={0}
+              aria-valuemax={300}
+              aria-valuenow={timerSeconds}
+              aria-valuetext={`${timerSeconds} of 300 seconds`}
+              style={{ display: "grid", gridTemplateColumns: "repeat(30, 1fr)", gap: 1.5 }}
+            >
               {circles.map((filled, i) => (
-                <div key={i} style={{ width: "100%", paddingTop: "100%", borderRadius: "50%", background: filled ? "#f97316" : "rgba(255,255,255,0.04)", border: "1px solid " + (filled ? "#fb923c" : "rgba(255,255,255,0.06)"), transition: "background 0.2s" }} />
+                <span
+                  key={i}
+                  className="calendar-task-app__timer-dot"
+                  aria-hidden="true"
+                  style={{ width: "100%", paddingTop: "100%", borderRadius: "50%", background: filled ? "#f97316" : "rgba(255,255,255,0.04)", border: "1px solid " + (filled ? "#fb923c" : "rgba(255,255,255,0.06)"), transition: "background 0.2s" }}
+                />
               ))}
             </div>
-          </div>
+          </section>
 
           {/* --- Pomodoro --- */}
-          <div style={{
+          <section
+            id="pomodoro-widget"
+            className="calendar-task-app__widget-section calendar-task-app__pomodoro"
+            role="region"
+            aria-labelledby="pomodoro-title"
+            style={{
             ...S.section,
             borderColor: pomodoroRunning ? "rgba(220,38,38,0.45)" : "rgba(255,255,255,0.08)",
             transition: "border-color 0.2s",
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, gap: 6 }}>
-              <div style={{
+              <h2
+                id="pomodoro-title"
+                className="calendar-task-app__section-title"
+                style={{
                 ...S.sectionLabel,
                 color: pomodoroRunning ? "#dc2626" : "rgba(255,255,255,0.28)",
                 marginBottom: 0,
@@ -1251,10 +1581,13 @@ export default function CalendarTaskApp() {
               }}>
                 {pomodoroRunning ? "\uD83C\uDF45" : "\uD83E\uDD6B"}{" "}
                 {pomodoroLabel}
-              </div>
+              </h2>
               <PlayPauseButton
+                id="pomodoro-toggle"
+                className="calendar-task-app__pomodoro-toggle"
                 running={pomodoroRunning}
                 onToggle={togglePomodoro}
+                ariaLabel={pomodoroRunning ? `Pause Pomodoro ${pomodoroLabel.toLowerCase()} timer` : `Start Pomodoro ${pomodoroLabel.toLowerCase()} timer`}
                 style={pomodoroRunning
                   ? { padding: "3px 10px", fontSize: 13 }
                   : {
@@ -1268,8 +1601,12 @@ export default function CalendarTaskApp() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, opacity: pomodoroRunning || pomodoroPhase === "breakPending" ? 1 : 0.45, transition: "opacity 0.2s" }}>
               <button
+                id="focus-sound-toggle"
+                className="calendar-task-app__sound-toggle calendar-task-app__sound-toggle--focus"
                 type="button"
                 title={focusSoundEnabled ? "Focus stop sound on — click to disable" : "Focus stop sound off — click to enable"}
+                aria-label={focusSoundEnabled ? "Disable focus completion sound" : "Enable focus completion sound"}
+                aria-pressed={focusSoundEnabled}
                 onClick={() => setFocusSoundEnabled((v) => !v)}
                 style={{
                   background: focusSoundEnabled ? "rgba(220,38,38,0.2)" : "rgba(255,255,255,0.04)",
@@ -1289,7 +1626,17 @@ export default function CalendarTaskApp() {
                 {focusSoundEnabled ? "on" : "off"}
               </button>
               <span style={{ fontSize: 9, width: 34, color: pomodoroRunning ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.25)" }}>Focus</span>
-              <div style={{ flex: 1, height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}>
+              <div
+                id="focus-progress"
+                className="calendar-task-app__pomodoro-progress calendar-task-app__pomodoro-progress--focus"
+                role="progressbar"
+                aria-label="Focus progress"
+                aria-valuemin={0}
+                aria-valuemax={1500}
+                aria-valuenow={pomodoroPhase === "work" ? pomodoroSeconds : pomodoroPhase === "breakPending" ? 1500 : 0}
+                aria-valuetext={pomodoroPhase === "work" ? `${fmtTime(pomodoroSeconds)} elapsed` : pomodoroPhase === "breakPending" ? "Focus complete" : "Not active"}
+                style={{ flex: 1, height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}
+              >
                 <div style={{ width: (pomodoroPhase === "work" ? (pomodoroSeconds / 1500) * 100 : pomodoroPhase === "breakPending" ? 100 : 0) + "%", height: "100%", background: pomodoroRunning ? "linear-gradient(90deg, #dc2626, #f97316)" : "rgba(255,255,255,0.2)", borderRadius: 4, transition: "width 0.5s, background 0.2s" }} />
               </div>
               <span style={{ fontSize: 9, width: 44, textAlign: "right", fontVariantNumeric: "tabular-nums", color: pomodoroRunning ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.25)" }}>
@@ -1298,8 +1645,12 @@ export default function CalendarTaskApp() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, opacity: pomodoroRunning && pomodoroPhase === "break" ? 1 : 0.45, transition: "opacity 0.2s" }}>
               <button
+                id="break-sound-toggle"
+                className="calendar-task-app__sound-toggle calendar-task-app__sound-toggle--break"
                 type="button"
                 title={breakSoundEnabled ? "Break sound on — click to disable" : "Break sound off — click to enable"}
+                aria-label={breakSoundEnabled ? "Disable break completion sound" : "Enable break completion sound"}
+                aria-pressed={breakSoundEnabled}
                 onClick={() => setBreakSoundEnabled((v) => !v)}
                 style={{
                   background: breakSoundEnabled ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.04)",
@@ -1319,61 +1670,97 @@ export default function CalendarTaskApp() {
                 {breakSoundEnabled ? "on" : "off"}
               </button>
               <span style={{ fontSize: 9, width: 34, color: "rgba(255,255,255,0.35)" }}>Break</span>
-              <div style={{ flex: 1, height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}>
+              <div
+                id="break-progress"
+                className="calendar-task-app__pomodoro-progress calendar-task-app__pomodoro-progress--break"
+                role="progressbar"
+                aria-label="Break progress"
+                aria-valuemin={0}
+                aria-valuemax={300}
+                aria-valuenow={pomodoroPhase === "break" ? pomodoroSeconds : 0}
+                aria-valuetext={pomodoroPhase === "break" ? `${fmtTime(pomodoroSeconds)} elapsed` : "Not active"}
+                style={{ flex: 1, height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}
+              >
                 <div style={{ width: (pomodoroPhase === "break" ? (pomodoroSeconds / 300) * 100 : 0) + "%", height: "100%", background: pomodoroRunning ? "linear-gradient(90deg, #2563eb, #7c3aed)" : "rgba(255,255,255,0.2)", borderRadius: 4, transition: "width 0.5s, background 0.2s" }} />
               </div>
               <span style={{ fontSize: 9, width: 44, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "rgba(255,255,255,0.35)" }}>
                 {pomodoroPhase === "break" ? fmtTime(pomodoroSeconds) : "\u2014"}
               </span>
             </div>
-            <div style={{ textAlign: "center", marginTop: 6, fontSize: 10, color: "rgba(255,255,255,0.25)" }}>
+            <div className="calendar-task-app__pomodoro-count" aria-live="polite" style={{ textAlign: "center", marginTop: 6, fontSize: 10, color: "rgba(255,255,255,0.25)" }}>
               Completed: <strong style={{ color: pomodoroRunning ? "#f97316" : "rgba(255,255,255,0.35)" }}>{pomodoroCount}</strong> pomodoros
             </div>
-          </div>
+          </section>
           </div>
         )}
-      </div>
+      </section>
 
       {/* ═══ COL 3: ATTACHMENTS + NOTES ═══ */}
-      <div
+      <section
         data-nav-column="attachments"
         data-nav-active={navColumn === "attachments" ? "true" : "false"}
+        id="attachments-panel"
+        className="calendar-task-app__panel calendar-task-app__panel--attachments"
+        role="region"
+        aria-labelledby="attachments-panel-title"
         tabIndex={-1}
         style={{ ...S.col, flex: isMobile ? "0 0 auto" : panelOpen.attachments ? "24 1 0" : "0 0 12%", transition: "flex 0.2s ease" }}
         onFocusCapture={() => setNavColumn("attachments")}
       >
         <button
+          id="attachments-panel-toggle"
+          className="calendar-task-app__panel-toggle"
           type="button"
           data-panel-toggle
           ref={attachmentsPanelToggleRef}
           title={panelOpen.attachments ? "Collapse Attachments & Notes panel" : "Expand Attachments & Notes panel"}
           aria-expanded={panelOpen.attachments}
+          aria-controls={panelOpen.attachments ? "attachments-panel-content" : undefined}
+          aria-label={`${panelOpen.attachments ? "Collapse" : "Expand"} Attachments and Notes panel`}
           onClick={() => togglePanel("attachments")}
           style={{ ...S.iconBtn, ...S.colTitle, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, opacity: 1, padding: "0 0 10px", color: "rgba(255,255,255,0.3)" }}
         >
-          <span style={{ transform: panelOpen.attachments ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
-          <span>Attachments &amp; Notes</span>
+          <span aria-hidden="true" style={{ transform: panelOpen.attachments ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+          <span id="attachments-panel-title" className="calendar-task-app__panel-title">Attachments &amp; Notes</span>
         </button>
         {panelOpen.attachments && (
           <>
-        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", textAlign: "center", marginBottom: 8 }}>{currentWeekKey} {"\u2014"} {currentWeekRange}</div>
-        <div style={S.colScroll}>
+        <div id="attachments-panel-content" className="calendar-task-app__panel-content calendar-task-app__attachments" style={S.colScroll}>
+          <div className="calendar-task-app__week-summary" aria-live="polite" style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", textAlign: "center", marginBottom: 8 }}>{currentWeekKey} {"\u2014"} {currentWeekRange}</div>
 
           {/* Camera/upload */}
-          <div onClick={() => fileRef.current?.click()} style={{ border: "2px dashed rgba(59,130,246,0.25)", borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", marginBottom: 8 }}>
-            <div style={{ fontSize: 20, marginBottom: 1 }}>{"\uD83D\uDCF7"}</div>
-            <div style={{ fontSize: 8, color: "rgba(255,255,255,0.3)" }}>Click to add image</div>
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg" hidden onChange={handleFileSelect} />
-          </div>
+          <button
+            id="attachment-upload"
+            className="calendar-task-app__upload-zone"
+            type="button"
+            aria-label="Add PNG or JPEG image attachment"
+            onClick={() => fileRef.current?.click()}
+            style={{ border: "2px dashed rgba(59,130,246,0.25)", borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", marginBottom: 8, width: "100%", color: "inherit", background: "transparent", fontFamily: "inherit" }}
+          >
+            <span aria-hidden="true" style={{ display: "block", fontSize: 20, marginBottom: 1 }}>{"\uD83D\uDCF7"}</span>
+            <span style={{ display: "block", fontSize: 8, color: "rgba(255,255,255,0.3)" }}>Click to add image</span>
+          </button>
+          <input
+            ref={fileRef}
+            id="attachment-file-input"
+            className="calendar-task-app__file-input"
+            type="file"
+            accept="image/png,image/jpeg"
+            aria-label="Choose PNG or JPEG image"
+            hidden
+            onChange={handleFileSelect}
+          />
 
           {/* Attachment list */}
-          <div role="listbox" aria-label="Attachments">
+          <div id="attachment-list" className="calendar-task-app__attachment-list" role="listbox" aria-label="Attachments" aria-orientation="vertical" aria-activedescendant={attachments[focusedAttIdx] ? `attachment-card-${attachments[focusedAttIdx].id}` : undefined}>
           {attachments.map((att, idx) => {
             const listFocused = focusedAttIdx === idx;
             return (
             <div
               key={att.id}
               ref={(el) => { attCardRefs.current[idx] = el; }}
+              id={`attachment-card-${att.id}`}
+              className={`calendar-task-app__attachment-card${att.id === selectedAttId ? " calendar-task-app__attachment-card--selected" : ""}`}
               data-focusable-card
               role="option"
               aria-selected={att.id === selectedAttId}
@@ -1397,14 +1784,29 @@ export default function CalendarTaskApp() {
                 }
               }}
             >
-              <img
-                src={att.dataUri} alt=""
-                style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, flexShrink: 0, cursor: "zoom-in" }}
+              <button
+                id={`zoom-attachment-${att.id}`}
+                className="calendar-task-app__attachment-preview-button"
+                type="button"
+                aria-label={`Open image preview for ${att.name}`}
                 onClick={(e) => { e.stopPropagation(); openZoom(att); }}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
+                style={{ border: "none", padding: 0, background: "transparent", display: "flex", flexShrink: 0, cursor: "zoom-in" }}
+              >
+                <img
+                  src={att.dataUri}
+                  alt=""
+                  style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, flexShrink: 0 }}
+                />
+              </button>
+              <div className="calendar-task-app__attachment-name" style={{ flex: 1, minWidth: 0 }}>
                 {editingAttName === att.id ? (
-                  <input autoFocus style={{ ...S.input, fontSize: 9 }} defaultValue={att.name}
+                  <input
+                    id={`attachment-name-${att.id}`}
+                    className="calendar-task-app__attachment-name-input"
+                    autoFocus
+                    aria-label={`Filename for ${att.name}`}
+                    style={{ ...S.input, fontSize: 9 }}
+                    defaultValue={att.name}
                     onClick={(e) => e.stopPropagation()}
                     onBlur={(e) => { setAttachments((prev) => prev.map((a) => a.id === att.id ? { ...a, name: e.target.value } : a)); setEditingAttName(null); }}
                     onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
@@ -1412,7 +1814,18 @@ export default function CalendarTaskApp() {
                   <div style={{ fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onDoubleClick={(e) => { e.stopPropagation(); setEditingAttName(att.id); }} title={att.name}>{att.name}</div>
                 )}
               </div>
-              <button type="button" tabIndex={listFocused ? 0 : -1} style={{ ...S.iconBtn, color: "#f87171", fontSize: 11 }} onClick={(e) => { e.stopPropagation(); setDeleteAttDialog(att); }}>{"\u2715"}</button>
+              <button
+                id={`delete-attachment-${att.id}`}
+                className="calendar-task-app__icon-button calendar-task-app__attachment-delete"
+                type="button"
+                tabIndex={listFocused ? 0 : -1}
+                style={{ ...S.iconBtn, color: "#f87171", fontSize: 11 }}
+                title="Delete attachment"
+                aria-label={`Delete attachment ${att.name}`}
+                onClick={(e) => { e.stopPropagation(); setDeleteAttDialog(att); }}
+              >
+                {"\u2715"}
+              </button>
             </div>
             );
           })}
@@ -1420,32 +1833,49 @@ export default function CalendarTaskApp() {
 
           {/* Small inline preview */}
           {selectedAtt && (
-            <div
+            <button
+              id="selected-attachment-preview"
+              className="calendar-task-app__selected-attachment-preview"
+              type="button"
+              aria-label={`Open image preview for ${selectedAtt.name}`}
               style={{ border: "2px dashed rgba(59,130,246,0.3)", borderRadius: 10, padding: 6, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 6, marginBottom: 8, cursor: "zoom-in" }}
               onClick={() => openZoom(selectedAtt)}
             >
               <img src={selectedAtt.dataUri} alt="" style={{ maxWidth: "100%", maxHeight: 140, objectFit: "contain", borderRadius: 6 }} />
-            </div>
+            </button>
           )}
 
           {/* --- WEEKLY NOTES --- */}
-          <div style={{ ...S.section, borderColor: "rgba(168,85,247,0.15)", marginTop: 6 }}>
+          <section
+            id="weekly-notes"
+            className="calendar-task-app__widget-section calendar-task-app__notes"
+            role="region"
+            aria-labelledby="weekly-notes-title"
+            style={{ ...S.section, borderColor: "rgba(168,85,247,0.15)", marginTop: 6 }}
+          >
             <button
+              id="weekly-notes-toggle"
+              className="calendar-task-app__section-toggle"
               type="button"
               title={notesEditorOpen ? "Collapse notes editor" : "Expand notes editor"}
               aria-expanded={notesEditorOpen}
+              aria-controls={notesEditorOpen ? "weekly-notes-editor" : undefined}
+              aria-label={`${notesEditorOpen ? "Collapse" : "Expand"} weekly notes editor`}
               onClick={() => setNotesEditorOpen((open) => !open)}
               style={{ ...S.iconBtn, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, color: "rgba(168,85,247,0.6)", opacity: 1, padding: "0 0 6px" }}
             >
-              <span style={{ transform: notesEditorOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
-              <span style={{ ...S.sectionLabel, color: "inherit", marginBottom: 0 }}>Notes {"\u2014"} {currentWeekKey}</span>
+              <span aria-hidden="true" style={{ transform: notesEditorOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+              <span id="weekly-notes-title" style={{ ...S.sectionLabel, color: "inherit", marginBottom: 0 }}>Notes {"\u2014"} {currentWeekKey}</span>
             </button>
             {notesEditorOpen && (
-              <div className="notes-mdx-shell" onKeyDownCapture={handleNotesEditorKeyDown}>
+              <div id="weekly-notes-editor" className="notes-mdx-shell calendar-task-app__markdown-editor" onKeyDownCapture={handleNotesEditorKeyDown}>
                 <MDXEditor
+                  className="calendar-task-app__markdown-editor-input"
+                  contentEditableClassName="calendar-task-app__markdown-editor-content"
                   markdown={noteContent}
                   onChange={setNoteContent}
                   placeholder={"Notes for " + currentWeekRange + "..."}
+                  translation={(key, defaultValue) => key === "contentArea.editableMarkdown" ? `Weekly notes for ${currentWeekRange}` : defaultValue}
                   plugins={[
                     headingsPlugin(),
                     listsPlugin(),
@@ -1469,52 +1899,101 @@ export default function CalendarTaskApp() {
                 />
               </div>
             )}
-            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <button data-notes-export style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)", flex: 1 }} onClick={handleExport}>{"\u2193"} Export</button>
-              <button style={{ ...S.btn("rgba(148,163,184,0.12)"), border: "1px solid rgba(148,163,184,0.25)", flex: 1 }} onClick={() => setShowTasksMd(true)}>tasks.md</button>
-              <button style={{ ...S.btn("rgba(168,85,247,0.12)"), border: "1px solid rgba(168,85,247,0.25)", flex: 1 }} onClick={() => importRef.current?.click()}>{"\u2191"} Import</button>
-              <input ref={importRef} type="file" accept=".md,.zip,application/zip" multiple hidden onChange={handleImport} />
+            <div className="calendar-task-app__notes-actions" style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <button
+                id="export-markdown"
+                className="calendar-task-app__button calendar-task-app__export"
+                data-notes-export
+                type="button"
+                aria-label="Export calendar markdown zip"
+                style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)", flex: 1 }}
+                onClick={handleExport}
+              >
+                {"\u2193"} Export
+              </button>
+              <button
+                id="show-tasks-markdown"
+                className="calendar-task-app__button calendar-task-app__show-markdown"
+                type="button"
+                aria-label="View raw tasks markdown"
+                style={{ ...S.btn("rgba(148,163,184,0.12)"), border: "1px solid rgba(148,163,184,0.25)", flex: 1 }}
+                onClick={openTasksMarkdown}
+              >
+                tasks.md
+              </button>
+              <button
+                id="import-markdown"
+                className="calendar-task-app__button calendar-task-app__import"
+                type="button"
+                aria-label="Import calendar markdown files"
+                style={{ ...S.btn("rgba(168,85,247,0.12)"), border: "1px solid rgba(168,85,247,0.25)", flex: 1 }}
+                onClick={() => importRef.current?.click()}
+              >
+                {"\u2191"} Import
+              </button>
+              <input
+                ref={importRef}
+                id="import-markdown-file-input"
+                className="calendar-task-app__file-input"
+                type="file"
+                accept=".md,.zip,application/zip"
+                multiple
+                aria-label="Choose markdown or ZIP files to import"
+                hidden
+                onChange={handleImport}
+              />
             </div>
-            {importMsg && <div style={{ fontSize: 9, color: "#86efac", textAlign: "center", marginTop: 6, padding: "4px 8px", background: "rgba(34,197,94,0.1)", borderRadius: 6 }}>{importMsg}</div>}
-          </div>
+            {importMsg && <div id="import-status" className="calendar-task-app__import-status" role="status" aria-live="polite" style={{ fontSize: 9, color: "#86efac", textAlign: "center", marginTop: 6, padding: "4px 8px", background: "rgba(34,197,94,0.1)", borderRadius: 6 }}>{importMsg}</div>}
+          </section>
         </div>
           </>
         )}
-      </div>
+      </section>
 
       {/* ═══ COL 4: COMPLETED ═══ */}
-      <div
+      <section
         data-nav-column="completed"
         data-nav-active={navColumn === "completed" ? "true" : "false"}
+        id="completed-panel"
+        className="calendar-task-app__panel calendar-task-app__panel--completed"
+        role="region"
+        aria-labelledby="completed-panel-title"
         tabIndex={-1}
         style={{ ...S.col, flex: isMobile ? "0 0 auto" : panelOpen.completed ? "24 1 0" : "0 0 12%", borderRight: "none", borderBottom: isMobile ? "none" : undefined, transition: "flex 0.2s ease" }}
         onFocusCapture={() => setNavColumn("completed")}
       >
         <button
+          id="completed-panel-toggle"
+          className="calendar-task-app__panel-toggle"
           type="button"
           data-panel-toggle
           title={panelOpen.completed ? "Collapse Completed panel" : "Expand Completed panel"}
           aria-expanded={panelOpen.completed}
+          aria-controls={panelOpen.completed ? "completed-panel-content" : undefined}
+          aria-label={`${panelOpen.completed ? "Collapse" : "Expand"} Completed panel`}
           onClick={() => togglePanel("completed")}
           style={{ ...S.iconBtn, ...S.colTitle, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, opacity: 1, padding: "0 0 10px", color: "rgba(255,255,255,0.3)" }}
         >
-          <span style={{ transform: panelOpen.completed ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
-          <span>Completed ({filteredCompleted.length})</span>
+          <span aria-hidden="true" style={{ transform: panelOpen.completed ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+          <span id="completed-panel-title" className="calendar-task-app__panel-title">Completed ({filteredCompleted.length})</span>
         </button>
         {panelOpen.completed && (
           <>
-        <div style={{ textAlign: "center", marginBottom: 8, fontSize: 9, color: "rgba(255,255,255,0.25)" }}>{fmtDateDisplay(selectedDate)}</div>
-        <div style={S.colScroll} role="listbox" aria-label="Completed tasks">
+        <div id="completed-panel-content" className="calendar-task-app__panel-content calendar-task-app__completed" style={S.colScroll}>
+        <div className="calendar-task-app__completed-date" aria-live="polite" style={{ textAlign: "center", marginBottom: 8, fontSize: 9, color: "rgba(255,255,255,0.25)" }}>{fmtDateDisplay(selectedDate)}</div>
+        <div id="completed-task-list" className="calendar-task-app__completed-list" style={{ minHeight: 0 }} role="listbox" aria-label="Completed tasks" aria-orientation="vertical" aria-activedescendant={filteredCompleted[focusedCompletedIdx] ? `completed-task-card-${filteredCompleted[focusedCompletedIdx].id}-${focusedCompletedIdx}` : undefined}>
           {filteredCompleted.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 24, fontSize: 10, color: "rgba(255,255,255,0.12)" }}>No completed tasks for this date.</div>
+            <div className="calendar-task-app__empty-state" role="status" style={{ textAlign: "center", padding: 24, fontSize: 10, color: "rgba(255,255,255,0.12)" }}>No completed tasks for this date.</div>
           ) : filteredCompleted.map((ct, idx) => {
             const noteKey = `c-${ct.id}-${ct.completedAt}`;
             const notesOpen = !!expandedNotes[noteKey];
             const listFocused = focusedCompletedIdx === idx;
             return (
-              <div key={noteKey} style={{ marginBottom: 6 }}>
+              <div key={noteKey} className="calendar-task-app__completed-item" style={{ marginBottom: 6 }}>
                 <div
                   ref={(el) => { completedCardRefs.current[idx] = el; }}
+                  id={`completed-task-card-${ct.id}-${idx}`}
+                  className={`calendar-task-app__completed-card${listFocused ? " calendar-task-app__completed-card--focused" : ""}`}
                   data-focusable-card
                   role="option"
                   aria-selected={listFocused}
@@ -1529,16 +2008,27 @@ export default function CalendarTaskApp() {
                     setFocusedCompletedIdx(idx);
                     setNavColumn("completed");
                   }}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setFocusedCompletedIdx(idx);
+                    }
+                  }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <div style={S.badge}>T<sub>{ct.id}</sub></div>
+                    <div className="calendar-task-app__task-badge" style={S.badge}>T<sub>{ct.id}</sub></div>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <div style={{ ...S.time, fontSize: 13 }}>{fmtTime(ct.timeOnTask)}</div>
+                      <div className="calendar-task-app__task-time" style={{ ...S.time, fontSize: 13 }}>{fmtTime(ct.timeOnTask)}</div>
                       <button
+                        id={`toggle-completed-notes-${ct.id}-${idx}`}
+                        className="calendar-task-app__icon-button calendar-task-app__completed-notes-toggle"
                         type="button"
                         tabIndex={listFocused ? 0 : -1}
                         title={notesOpen ? "Collapse notepad" : "Expand notepad"}
                         aria-expanded={notesOpen}
+                        aria-controls={`completed-task-notes-${ct.id}-${idx}`}
+                        aria-label={`${notesOpen ? "Collapse" : "Expand"} notes for completed task T${ct.id}`}
                         onClick={(e) => toggleTaskNotes(noteKey, e)}
                         style={{
                           ...S.iconBtn,
@@ -1554,10 +2044,12 @@ export default function CalendarTaskApp() {
                       </button>
                     </div>
                   </div>
-                  <div style={S.desc}>{ct.description || <em style={{ opacity: 0.5 }}>No description</em>}</div>
+                  <div className="calendar-task-app__task-description" style={S.desc}>{ct.description || <em style={{ opacity: 0.5 }}>No description</em>}</div>
                 </div>
                 {notesOpen && (
                   <div
+                    id={`completed-task-notes-${ct.id}-${idx}`}
+                    className="calendar-task-app__completed-notes"
                     style={{
                       background: "rgba(134,239,172,0.18)",
                       border: "1px solid #22c55e",
@@ -1569,7 +2061,10 @@ export default function CalendarTaskApp() {
                     }}
                   >
                     <textarea
+                      id={`completed-task-notes-input-${ct.id}-${idx}`}
+                      className="calendar-task-app__completed-notes-input"
                       value={ct.notes || ""}
+                      aria-label={`Notes for completed task T${ct.id}`}
                       placeholder="Task notes..."
                       onChange={(e) => updateCompletedNotes(selectedDate, ct.completedAt, ct.id, e.target.value)}
                       style={{
@@ -1590,14 +2085,16 @@ export default function CalendarTaskApp() {
             );
           })}
         </div>
+        </div>
           </>
         )}
-      </div>
+      </section>
 
       {/* ═══ DIALOGS ═══ */}
 
       {deleteDialog && (
         <ConfirmDialog
+          dialogId="delete-task-dialog"
           title={<>Delete Task T<sub>{deleteDialog.id}</sub>?</>}
           confirmLabel="Delete"
           confirmStyle={S.btnDanger}
@@ -1612,6 +2109,7 @@ export default function CalendarTaskApp() {
 
       {completeDialog && (
         <ConfirmDialog
+          dialogId="complete-task-dialog"
           title={<>Complete Task T<sub>{completeDialog.id}</sub>?</>}
           confirmLabel="Complete"
           confirmStyle={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.4)" }}
@@ -1625,6 +2123,7 @@ export default function CalendarTaskApp() {
 
       {deleteAttDialog && (
         <ConfirmDialog
+          dialogId="delete-attachment-dialog"
           title="Delete Attachment?"
           confirmLabel="Delete"
           confirmStyle={S.btnDanger}
@@ -1638,39 +2137,114 @@ export default function CalendarTaskApp() {
 
       {/* Zoom preview */}
       {zoomAtt && (
-        <div style={S.dialog} onClick={() => setZoomAtt(null)}>
-          <div style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ position: "absolute", top: -36, right: 0, display: "flex", gap: 6, alignItems: "center" }}>
-              <button style={{ ...S.btn("rgba(255,255,255,0.15)"), padding: "4px 10px", fontSize: 14, fontWeight: 700 }} onClick={() => setZoomLevel((z) => Math.max(0.25, z - 0.25))}>-</button>
-              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", minWidth: 40, textAlign: "center" }}>{Math.round(zoomLevel * 100)}%</span>
-              <button style={{ ...S.btn("rgba(255,255,255,0.15)"), padding: "4px 10px", fontSize: 14, fontWeight: 700 }} onClick={() => setZoomLevel((z) => Math.min(4, z + 0.25))}>+</button>
-              <button style={{ ...S.btn("rgba(255,255,255,0.15)"), padding: "4px 10px", fontSize: 12 }} onClick={() => setZoomAtt(null)}>{"\u2715"}</button>
+        <div
+          id="attachment-zoom-dialog-overlay"
+          className="calendar-task-app__modal-overlay calendar-task-app__attachment-zoom-overlay"
+          style={S.dialog}
+          onClick={() => setZoomAtt(null)}
+        >
+          <div
+            ref={modalRef}
+            id="attachment-zoom-dialog"
+            className="calendar-task-app__modal calendar-task-app__attachment-zoom-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="attachment-zoom-dialog-title"
+            style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="calendar-task-app__attachment-zoom-controls" style={{ position: "absolute", top: -36, right: 0, display: "flex", gap: 6, alignItems: "center" }}>
+              <button
+                id="attachment-zoom-out"
+                className="calendar-task-app__button calendar-task-app__zoom-control"
+                type="button"
+                aria-label="Zoom out"
+                style={{ ...S.btn("rgba(255,255,255,0.15)"), padding: "4px 10px", fontSize: 14, fontWeight: 700 }}
+                onClick={() => setZoomLevel((z) => Math.max(0.25, z - 0.25))}
+              >
+                -
+              </button>
+              <span id="attachment-zoom-level" className="calendar-task-app__zoom-level" aria-live="polite" style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", minWidth: 40, textAlign: "center" }}>{Math.round(zoomLevel * 100)}%</span>
+              <button
+                id="attachment-zoom-in"
+                className="calendar-task-app__button calendar-task-app__zoom-control"
+                type="button"
+                aria-label="Zoom in"
+                style={{ ...S.btn("rgba(255,255,255,0.15)"), padding: "4px 10px", fontSize: 14, fontWeight: 700 }}
+                onClick={() => setZoomLevel((z) => Math.min(4, z + 0.25))}
+              >
+                +
+              </button>
+              <button
+                ref={modalInitialFocusRef}
+                id="close-attachment-zoom"
+                className="calendar-task-app__button calendar-task-app__zoom-close"
+                type="button"
+                aria-label="Close image preview"
+                style={{ ...S.btn("rgba(255,255,255,0.15)"), padding: "4px 10px", fontSize: 12 }}
+                onClick={() => setZoomAtt(null)}
+              >
+                {"\u2715"}
+              </button>
             </div>
-            <div style={{ overflow: "auto", maxWidth: "90vw", maxHeight: "85vh", borderRadius: 8, background: "rgba(0,0,0,0.5)" }}>
-              <img src={zoomAtt.dataUri} alt="" style={{ transform: `scale(${zoomLevel})`, transformOrigin: "top left", display: "block" }} />
+            <div id="attachment-zoom-content" className="calendar-task-app__attachment-zoom-content" style={{ overflow: "auto", maxWidth: "90vw", maxHeight: "85vh", borderRadius: 8, background: "rgba(0,0,0,0.5)" }}>
+              <img src={zoomAtt.dataUri} alt={`Preview of ${zoomAtt.name}`} style={{ transform: `scale(${zoomLevel})`, transformOrigin: "top left", display: "block" }} />
             </div>
-            <div style={{ textAlign: "center", marginTop: 6, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{zoomAtt.name}</div>
+            <h2 id="attachment-zoom-dialog-title" className="calendar-task-app__attachment-zoom-title" style={{ textAlign: "center", marginTop: 6, fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.4)" }}>{zoomAtt.name}</h2>
           </div>
         </div>
       )}
 
       {showTasksMd && (
-        <div style={S.dialog} onClick={() => setShowTasksMd(false)}>
-          <div style={{ ...S.dialogBox, maxWidth: 600, maxHeight: "85vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div
+          id="tasks-markdown-dialog-overlay"
+          className="calendar-task-app__modal-overlay calendar-task-app__tasks-markdown-overlay"
+          style={S.dialog}
+          onClick={() => setShowTasksMd(false)}
+        >
+          <div
+            ref={modalRef}
+            id="tasks-markdown-dialog"
+            className="calendar-task-app__modal calendar-task-app__tasks-markdown-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tasks-markdown-dialog-title"
+            style={{ ...S.dialogBox, maxWidth: 600, maxHeight: "85vh", overflow: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>tasks.md (raw)</span>
-              <button type="button" style={S.iconBtn} onClick={() => setShowTasksMd(false)} aria-label="Close tasks.md">{"\u2715"}</button>
+              <h2 id="tasks-markdown-dialog-title" className="calendar-task-app__modal-title" style={{ fontSize: 13, fontWeight: 700 }}>tasks.md (raw)</h2>
+              <button
+                ref={modalInitialFocusRef}
+                id="close-tasks-markdown"
+                className="calendar-task-app__icon-button"
+                type="button"
+                style={S.iconBtn}
+                onClick={() => setShowTasksMd(false)}
+                aria-label="Close tasks.md"
+              >
+                {"\u2715"}
+              </button>
             </div>
-            <pre style={{ ...S.input, maxHeight: "60vh", overflow: "auto", whiteSpace: "pre-wrap", fontSize: 8, lineHeight: 1.5, padding: "12px 14px" }}>
+            <pre id="tasks-markdown-content" className="calendar-task-app__tasks-markdown-content" tabIndex={0} aria-label="Raw tasks markdown" style={{ ...S.input, maxHeight: "60vh", overflow: "auto", whiteSpace: "pre-wrap", fontSize: 8, lineHeight: 1.5, padding: "12px 14px" }}>
               {tasksToMarkdown(tasks, completedTasks)}
             </pre>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-              <button style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)" }} onClick={handleExport}>{"\u2193"} Export all</button>
+              <button
+                id="export-all-markdown"
+                className="calendar-task-app__button calendar-task-app__export-all"
+                type="button"
+                aria-label="Export all calendar markdown"
+                style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)" }}
+                onClick={handleExport}
+              >
+                {"\u2193"} Export all
+              </button>
             </div>
           </div>
         </div>
       )}
 
-    </div>
+    </main>
   );
 }
