@@ -1031,17 +1031,6 @@ export default function CalendarTaskApp() {
         .notes-mdx-shell [contenteditable="true"] h3 { font-size: 12px; color: #dc143c !important; }
         .notes-mdx-shell [contenteditable="true"] strong { color: #b8f3ff !important; }
         .notes-mdx-shell [contenteditable="true"] em { color: rgba(255,255,255,0.5); }
-        .notes-mdx-shell [contenteditable="true"] pre {
-          margin: 8px 0;
-          padding: 8px 10px;
-          overflow-x: auto;
-          border: 1px solid rgba(249,115,22,0.4);
-          border-radius: 4px;
-          background: rgba(249,115,22,0.1);
-          color: #fb923c !important;
-          font-family: "JetBrains Mono", monospace;
-        }
-        .notes-mdx-shell [contenteditable="true"] pre code { color: #fb923c !important; }
       `}</style>
 
       {/* ═══ COL 1: TASKS ═══ */}
