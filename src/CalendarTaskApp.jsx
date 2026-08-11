@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
+  MDXEditor,
+  headingsPlugin,
+  listsPlugin,
+  quotePlugin,
+  thematicBreakPlugin,
+  markdownShortcutPlugin,
+} from "@mdxeditor/editor";
+import "@mdxeditor/editor/style.css";
+import {
   saveTasks, loadTasks, saveNote, loadNote, loadNoteRaw,
   saveSettings, loadSettings, exportAllMarkdownZip,
   importMarkdownFiles, parseZip,
@@ -199,6 +208,7 @@ export default function CalendarTaskApp() {
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
   const timerRef = useRef(null);
+  const timerWasRunningRef = useRef(false);
 
   /* pomodoro — own running state, does not drive the 300s timer */
   const [pomodoroSeconds, setPomodoroSeconds] = useState(0);
@@ -231,6 +241,8 @@ export default function CalendarTaskApp() {
   const [completeDialog, setCompleteDialog] = useState(null);
   const [deleteAttDialog, setDeleteAttDialog] = useState(null);
   const [showMdPreview, setShowMdPreview] = useState(false);
+  const [tasksMdOpen, setTasksMdOpen] = useState(false);
+  const [notesEditorOpen, setNotesEditorOpen] = useState(true);
   const [zoomAtt, setZoomAtt] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [importMsg, setImportMsg] = useState(null);
@@ -339,7 +351,6 @@ export default function CalendarTaskApp() {
           const next = prev + 1;
           if (next >= 300) {
             audio.timerComplete();
-            setTimeout(() => setTimerSeconds(0), 100);
             return 0;
           }
           return next;
@@ -351,6 +362,15 @@ export default function CalendarTaskApp() {
     }
     return () => clearInterval(timerRef.current);
   }, [timerRunning, selectedTaskId]);
+
+  /* Flush the latest task state whenever a 300s timer cycle rolls over. */
+  useEffect(() => {
+    if (!hydrated.current) return;
+    if (timerRunning && timerSeconds === 0 && timerWasRunningRef.current) {
+      syncToStorage();
+    }
+    timerWasRunningRef.current = timerRunning;
+  }, [timerRunning, timerSeconds]);
 
   /* ═══ POMODORO (independent) ═══ */
   useEffect(() => {
@@ -799,14 +819,24 @@ export default function CalendarTaskApp() {
           box-shadow: inset 0 0 0 1.5px #c2410c;
           background: transparent;
         }
-        .md-render h1 { font-size: 16px; font-weight: 800; margin: 12px 0 6px; color: #f97316; }
-        .md-render h2 { font-size: 14px; font-weight: 700; margin: 10px 0 4px; color: #fb923c; }
-        .md-render h3 { font-size: 12px; font-weight: 700; margin: 8px 0 4px; color: #fdba74; }
+        .md-render h1 { font-size: 16px; font-weight: 800; margin: 12px 0 6px; color: #dc143c; }
+        .md-render h2 { font-size: 14px; font-weight: 700; margin: 10px 0 4px; color: #dc143c; }
+        .md-render h3 { font-size: 12px; font-weight: 700; margin: 8px 0 4px; color: #dc143c; }
         .md-render blockquote { border-left: 3px solid rgba(255,255,255,0.15); padding-left: 10px; margin: 6px 0; opacity: 0.6; }
         .md-render ul { padding-left: 18px; margin: 4px 0; }
         .md-render li { margin: 2px 0; }
-        .md-render strong { color: #e2e8f0; }
+        .md-render strong { color: #b8f3ff; }
         .md-render em { color: rgba(255,255,255,0.5); }
+        .notes-mdx-shell { min-height: 140px; border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; overflow: hidden; background: rgba(255,255,255,0.06); }
+        .notes-mdx-shell .mdxeditor { --baseBase: #171923; --baseBgSubtle: #1b1c27; --baseBg: #20212d; --baseBgHover: #292a37; --baseBgActive: #30313f; --baseLine: #3d3f4c; --baseBorder: #4a4c59; --baseBorderHover: #5b5d6b; --baseText: #e2e8f0; --baseTextContrast: #ffffff; --basePageBg: #20212d; --accentText: #c084fc; min-height: 140px; background: transparent; color: #e2e8f0; font-family: inherit; font-size: 11px; }
+        .notes-mdx-shell .mdxeditor-root-contenteditable, .notes-mdx-shell [contenteditable="true"] { color: #e2e8f0 !important; caret-color: #f97316; }
+        .notes-mdx-shell [contenteditable="true"] { min-height: 140px; padding: 8px 10px; line-height: 1.6; color: #e2e8f0; }
+        .notes-mdx-shell [contenteditable="true"] p { margin: 0 0 8px; }
+        .notes-mdx-shell [contenteditable="true"] h1 { font-size: 16px; color: #dc143c !important; }
+        .notes-mdx-shell [contenteditable="true"] h2 { font-size: 14px; color: #dc143c !important; }
+        .notes-mdx-shell [contenteditable="true"] h3 { font-size: 12px; color: #dc143c !important; }
+        .notes-mdx-shell [contenteditable="true"] strong { color: #b8f3ff !important; }
+        .notes-mdx-shell [contenteditable="true"] em { color: rgba(255,255,255,0.5); }
       `}</style>
 
       {/* ═══ COL 1: TASKS ═══ */}
@@ -1234,13 +1264,32 @@ export default function CalendarTaskApp() {
 
           {/* --- WEEKLY NOTES --- */}
           <div style={{ ...S.section, borderColor: "rgba(168,85,247,0.15)", marginTop: 6 }}>
-            <div style={{ ...S.sectionLabel, color: "rgba(168,85,247,0.6)" }}>Notes {"\u2014"} {currentWeekKey}</div>
-            <textarea
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              placeholder={"Notes for " + currentWeekRange + "..."}
-              style={{ ...S.input, minHeight: 140, resize: "vertical", lineHeight: 1.6, fontSize: 11, padding: "8px 10px" }}
-            />
+            <button
+              type="button"
+              title={notesEditorOpen ? "Collapse notes editor" : "Expand notes editor"}
+              aria-expanded={notesEditorOpen}
+              onClick={() => setNotesEditorOpen((open) => !open)}
+              style={{ ...S.iconBtn, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, color: "rgba(168,85,247,0.6)", opacity: 1, padding: "0 0 6px" }}
+            >
+              <span style={{ transform: notesEditorOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+              <span style={{ ...S.sectionLabel, color: "inherit", marginBottom: 0 }}>Notes {"\u2014"} {currentWeekKey}</span>
+            </button>
+            {notesEditorOpen && (
+              <div className="notes-mdx-shell">
+                <MDXEditor
+                  markdown={noteContent}
+                  onChange={setNoteContent}
+                  placeholder={"Notes for " + currentWeekRange + "..."}
+                  plugins={[
+                    headingsPlugin(),
+                    listsPlugin(),
+                    quotePlugin(),
+                    thematicBreakPlugin(),
+                    markdownShortcutPlugin(),
+                  ]}
+                />
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
               <button style={{ ...S.btn(), fontSize: 8, padding: "2px 8px" }} onClick={() => setShowMdPreview(true)}>Preview</button>
             </div>
@@ -1431,13 +1480,24 @@ export default function CalendarTaskApp() {
             />
 
             <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.35)" }}>tasks.md (raw)</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <button
+                  type="button"
+                  title={tasksMdOpen ? "Collapse tasks.md" : "Expand tasks.md"}
+                  aria-expanded={tasksMdOpen}
+                  onClick={() => setTasksMdOpen((open) => !open)}
+                  style={{ ...S.iconBtn, display: "flex", alignItems: "center", gap: 5, color: "rgba(255,255,255,0.5)", fontSize: 10, opacity: 1, padding: "2px 0" }}
+                >
+                  <span style={{ transform: tasksMdOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>{"\u25BC"}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700 }}>tasks.md (raw)</span>
+                </button>
                 <button style={{ ...S.btn(), fontSize: 8, padding: "2px 8px" }} onClick={handleExport}>{"\u2193"} Export all</button>
               </div>
-              <pre style={{ ...S.input, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", fontSize: 8, lineHeight: 1.5 }}>
-                {tasksToMarkdown(tasks, completedTasks)}
-              </pre>
+              {tasksMdOpen && (
+                <pre style={{ ...S.input, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", fontSize: 8, lineHeight: 1.5, marginTop: 6 }}>
+                  {tasksToMarkdown(tasks, completedTasks)}
+                </pre>
+              )}
             </div>
           </div>
         </div>

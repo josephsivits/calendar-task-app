@@ -191,7 +191,7 @@ Attachments stay in `localStorage` only and are not zipped.
 
 All data persists to `localStorage` in markdown format and can be exported/imported as `.md` files for git sync.
 
-Auto-save runs every **10 seconds** when dirty, on Sync, on play/pause, and on tab close.
+Auto-save runs every **10 seconds** when dirty, at the end of each **300-second timer cycle**, on Sync, on play/pause, and on tab close.
 
 ### Storage Layout
 
