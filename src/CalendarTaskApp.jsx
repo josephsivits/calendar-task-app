@@ -231,6 +231,9 @@ export default function CalendarTaskApp() {
   const [completeDialog, setCompleteDialog] = useState(null);
   const [deleteAttDialog, setDeleteAttDialog] = useState(null);
   const [showMdPreview, setShowMdPreview] = useState(false);
+  const [tasksMdOpen, setTasksMdOpen] = useState(false);
+  const [notesEditorOpen, setNotesEditorOpen] = useState(true);
+  const [notesPreviewOpen, setNotesPreviewOpen] = useState(true);
   const [zoomAtt, setZoomAtt] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [importMsg, setImportMsg] = useState(null);
@@ -1234,13 +1237,48 @@ export default function CalendarTaskApp() {
 
           {/* --- WEEKLY NOTES --- */}
           <div style={{ ...S.section, borderColor: "rgba(168,85,247,0.15)", marginTop: 6 }}>
-            <div style={{ ...S.sectionLabel, color: "rgba(168,85,247,0.6)" }}>Notes {"\u2014"} {currentWeekKey}</div>
-            <textarea
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              placeholder={"Notes for " + currentWeekRange + "..."}
-              style={{ ...S.input, minHeight: 140, resize: "vertical", lineHeight: 1.6, fontSize: 11, padding: "8px 10px" }}
-            />
+            <button
+              type="button"
+              title={notesEditorOpen ? "Collapse notes editor" : "Expand notes editor"}
+              aria-expanded={notesEditorOpen}
+              onClick={() => setNotesEditorOpen((open) => !open)}
+              style={{ ...S.iconBtn, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, color: "rgba(168,85,247,0.6)", opacity: 1, padding: "0 0 6px" }}
+            >
+              <span style={{ transform: notesEditorOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+              <span style={{ ...S.sectionLabel, color: "inherit", marginBottom: 0 }}>Notes {"\u2014"} {currentWeekKey}</span>
+            </button>
+            {notesEditorOpen && (
+              <textarea
+                value={noteContent}
+                onChange={(e) => setNoteContent(e.target.value)}
+                placeholder={"Notes for " + currentWeekRange + "..."}
+                style={{ ...S.input, minHeight: 140, resize: "vertical", lineHeight: 1.6, fontSize: 11, padding: "8px 10px" }}
+              />
+            )}
+            <div style={{ marginTop: notesEditorOpen ? 10 : 2 }}>
+              <button
+                type="button"
+                title={notesPreviewOpen ? "Collapse rendered preview" : "Expand rendered preview"}
+                aria-expanded={notesPreviewOpen}
+                onClick={() => setNotesPreviewOpen((open) => !open)}
+                style={{ ...S.iconBtn, width: "100%", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 5, color: "rgba(168,85,247,0.45)", opacity: 1, padding: "0 0 5px" }}
+              >
+                <span style={{ transform: notesPreviewOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+                <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5 }}>Rendered Markdown</span>
+              </button>
+              {notesPreviewOpen && (
+                <div
+                  className="md-render"
+                  style={{ ...S.input, minHeight: 36, padding: "8px 10px", fontSize: 11, lineHeight: 1.7, color: "#e2e8f0" }}
+                >
+                  {noteContent.trim() ? (
+                    <div dangerouslySetInnerHTML={{ __html: renderMarkdown(noteContent) }} />
+                  ) : (
+                    <span style={{ color: "rgba(255,255,255,0.25)", fontStyle: "italic" }}>Nothing to render yet.</span>
+                  )}
+                </div>
+              )}
+            </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
               <button style={{ ...S.btn(), fontSize: 8, padding: "2px 8px" }} onClick={() => setShowMdPreview(true)}>Preview</button>
             </div>
@@ -1431,13 +1469,24 @@ export default function CalendarTaskApp() {
             />
 
             <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.35)" }}>tasks.md (raw)</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <button
+                  type="button"
+                  title={tasksMdOpen ? "Collapse tasks.md" : "Expand tasks.md"}
+                  aria-expanded={tasksMdOpen}
+                  onClick={() => setTasksMdOpen((open) => !open)}
+                  style={{ ...S.iconBtn, display: "flex", alignItems: "center", gap: 5, color: "rgba(255,255,255,0.5)", fontSize: 10, opacity: 1, padding: "2px 0" }}
+                >
+                  <span style={{ transform: tasksMdOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>{"\u25BC"}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700 }}>tasks.md (raw)</span>
+                </button>
                 <button style={{ ...S.btn(), fontSize: 8, padding: "2px 8px" }} onClick={handleExport}>{"\u2193"} Export all</button>
               </div>
-              <pre style={{ ...S.input, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", fontSize: 8, lineHeight: 1.5 }}>
-                {tasksToMarkdown(tasks, completedTasks)}
-              </pre>
+              {tasksMdOpen && (
+                <pre style={{ ...S.input, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", fontSize: 8, lineHeight: 1.5, marginTop: 6 }}>
+                  {tasksToMarkdown(tasks, completedTasks)}
+                </pre>
+              )}
             </div>
           </div>
         </div>
