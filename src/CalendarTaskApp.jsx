@@ -4,10 +4,15 @@ import {
   headingsPlugin,
   listsPlugin,
   quotePlugin,
+  codeBlockPlugin,
+  codeMirrorPlugin,
+  CodeMirrorEditor,
+  useCodeBlockEditorContext,
   thematicBreakPlugin,
   markdownShortcutPlugin,
 } from "@mdxeditor/editor";
 import "@mdxeditor/editor/style.css";
+import { $createParagraphNode } from "lexical";
 import {
   saveTasks, loadTasks, saveNote, loadNote, loadNoteRaw,
   saveSettings, loadSettings, exportAllMarkdownZip,
@@ -27,6 +32,34 @@ const fmtDateDisplay = (iso) => {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 };
 const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+
+function ExitOnEnterCodeMirrorEditor(props) {
+  const { parentEditor, lexicalNode } = useCodeBlockEditorContext();
+
+  const handleKeyDownCapture = (e) => {
+    if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    parentEditor.update(() => {
+      const paragraph = $createParagraphNode();
+      lexicalNode.insertAfter(paragraph);
+      paragraph.select();
+    });
+    requestAnimationFrame(() => parentEditor.focus());
+  };
+
+  return (
+    <div onKeyDownCapture={handleKeyDownCapture}>
+      <CodeMirrorEditor {...props} />
+    </div>
+  );
+}
+
+const exitOnEnterCodeBlockDescriptor = {
+  priority: 2,
+  match: () => true,
+  Editor: ExitOnEnterCodeMirrorEditor,
+};
 const getMonday = (d) => {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -1031,6 +1064,48 @@ export default function CalendarTaskApp() {
         .notes-mdx-shell [contenteditable="true"] h3 { font-size: 12px; color: #dc143c !important; }
         .notes-mdx-shell [contenteditable="true"] strong { color: #b8f3ff !important; }
         .notes-mdx-shell [contenteditable="true"] em { color: rgba(255,255,255,0.5); }
+        .notes-mdx-shell [contenteditable="true"] code {
+          color: #fb923c !important;
+          font-family: "JetBrains Mono", monospace;
+        }
+        .notes-mdx-shell [contenteditable="true"] p code,
+        .notes-mdx-shell [contenteditable="true"] li code,
+        .notes-mdx-shell [contenteditable="true"] blockquote code {
+          padding: 1px 4px;
+          border-radius: 3px;
+          background: rgba(249,115,22,0.14);
+        }
+        .notes-mdx-shell pre {
+          margin: 8px 0;
+          padding: 8px 10px;
+          overflow-x: auto;
+          border: 1px solid rgba(249,115,22,0.4);
+          border-radius: 4px;
+          background: rgba(249,115,22,0.1);
+          color: #fb923c !important;
+          font-family: "JetBrains Mono", monospace;
+        }
+        .notes-mdx-shell pre code {
+          padding: 0;
+          background: transparent;
+          color: #fb923c !important;
+        }
+        .notes-mdx-shell .cm-editor {
+          margin: 8px 0;
+          border: 1px solid rgba(249,115,22,0.4);
+          border-radius: 4px;
+          background: rgba(249,115,22,0.1);
+          color: #fb923c !important;
+        }
+        .notes-mdx-shell .cm-scroller {
+          overflow: auto;
+          font-family: "JetBrains Mono", monospace;
+        }
+        .notes-mdx-shell .cm-content,
+        .notes-mdx-shell .cm-line,
+        .notes-mdx-shell .cm-content span {
+          color: #fb923c !important;
+        }
       `}</style>
 
       {/* ═══ COL 1: TASKS ═══ */}
@@ -1805,6 +1880,19 @@ export default function CalendarTaskApp() {
                     headingsPlugin(),
                     listsPlugin(),
                     quotePlugin(),
+                    codeBlockPlugin({
+                      codeBlockEditorDescriptors: [exitOnEnterCodeBlockDescriptor],
+                    }),
+                    codeMirrorPlugin({
+                      codeBlockLanguages: {
+                        "": "Text",
+                        js: "JavaScript",
+                        ts: "TypeScript",
+                        tsx: "TypeScript (React)",
+                        jsx: "JavaScript (React)",
+                        css: "CSS",
+                      },
+                    }),
                     thematicBreakPlugin(),
                     markdownShortcutPlugin(),
                   ]}
