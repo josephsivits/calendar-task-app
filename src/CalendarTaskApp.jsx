@@ -265,6 +265,105 @@ function ConfirmDialog({
   );
 }
 
+/** Mobile image-source chooser: camera capture and gallery selection use separate inputs. */
+function AttachmentSourceDialog({ onCamera, onGallery, onCancel }) {
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+  const cancelRef = useRef(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    cameraRef.current?.focus();
+    const focusables = [cameraRef.current, galleryRef.current, cancelRef.current];
+
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onCancelRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+    };
+  }, []);
+
+  return (
+    <div
+      id="attachment-source-dialog-overlay"
+      className="calendar-task-app__modal-overlay calendar-task-app__attachment-source-overlay"
+      style={DIALOG_STYLE.overlay}
+      onClick={onCancel}
+    >
+      <div
+        id="attachment-source-dialog"
+        className="calendar-task-app__modal calendar-task-app__attachment-source-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="attachment-source-dialog-title"
+        aria-describedby="attachment-source-dialog-description"
+        style={{ ...DIALOG_STYLE.box, maxWidth: 340 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="attachment-source-dialog-title" className="calendar-task-app__modal-title" style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+          Add image
+        </h2>
+        <p id="attachment-source-dialog-description" className="calendar-task-app__modal-description" style={{ margin: "0 0 14px", fontSize: 10, color: "rgba(255,255,255,0.55)" }}>
+          Choose a camera capture or an existing image.
+        </p>
+        <div className="calendar-task-app__attachment-source-actions" style={{ display: "grid", gap: 8 }}>
+          <button
+            ref={cameraRef}
+            id="attachment-source-camera"
+            className="calendar-task-app__button calendar-task-app__attachment-source-button"
+            type="button"
+            style={{ ...DIALOG_STYLE.btn("rgba(59,130,246,0.18)"), border: "1px solid rgba(59,130,246,0.4)", width: "100%" }}
+            onClick={onCamera}
+          >
+            {"\uD83D\uDCF7"} Camera
+          </button>
+          <button
+            ref={galleryRef}
+            id="attachment-source-gallery"
+            className="calendar-task-app__button calendar-task-app__attachment-source-button"
+            type="button"
+            style={{ ...DIALOG_STYLE.btn("rgba(168,85,247,0.18)"), border: "1px solid rgba(168,85,247,0.4)", width: "100%" }}
+            onClick={onGallery}
+          >
+            {"\uD83D\uDDBC\uFE0F"} Gallery
+          </button>
+          <button
+            ref={cancelRef}
+            id="attachment-source-cancel"
+            className="calendar-task-app__button calendar-task-app__attachment-source-cancel"
+            type="button"
+            style={{ ...DIALOG_STYLE.btn(), width: "100%" }}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* =========================================================
    MAIN APP
    ========================================================= */
@@ -301,6 +400,7 @@ export default function CalendarTaskApp() {
   const [attachments, setAttachments] = useState([]);
   const [selectedAttId, setSelectedAttId] = useState(null);
   const fileRef = useRef(null);
+  const cameraFileRef = useRef(null);
   const [editingAttName, setEditingAttName] = useState(null);
 
   /* calendar */
@@ -313,6 +413,7 @@ export default function CalendarTaskApp() {
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [completeDialog, setCompleteDialog] = useState(null);
   const [deleteAttDialog, setDeleteAttDialog] = useState(null);
+  const [attachmentSourceOpen, setAttachmentSourceOpen] = useState(false);
   const [showTasksMd, setShowTasksMd] = useState(false);
   const [notesEditorOpen, setNotesEditorOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState({
@@ -569,6 +670,7 @@ export default function CalendarTaskApp() {
   /* ═══ ATTACHMENTS ═══ */
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file || !["image/png", "image/jpeg"].includes(file.type)) return;
     const reader = new FileReader();
     reader.onload = () => {
@@ -577,7 +679,20 @@ export default function CalendarTaskApp() {
       setAttachments((prev) => [...prev, { id, name: file.name, mimeType: file.type, dataUri: reader.result, createdAt: new Date().toISOString() }]);
     };
     reader.readAsDataURL(file);
-    e.target.value = "";
+  };
+  const openAttachmentPicker = () => {
+    if (isMobile) {
+      setAttachmentSourceOpen(true);
+      return;
+    }
+    fileRef.current?.click();
+  };
+  const chooseAttachmentSource = (source) => {
+    setAttachmentSourceOpen(false);
+    requestAnimationFrame(() => {
+      const input = source === "camera" ? cameraFileRef.current : fileRef.current;
+      input?.click();
+    });
   };
   const confirmDeleteAtt = () => {
     if (!deleteAttDialog) return;
@@ -753,7 +868,7 @@ export default function CalendarTaskApp() {
   const filteredCompletedRef = useRef(filteredCompleted);
   filteredCompletedRef.current = filteredCompleted;
   const overlayOpenRef = useRef(false);
-  overlayOpenRef.current = !!(deleteDialog || completeDialog || deleteAttDialog || zoomAtt || showTasksMd);
+  overlayOpenRef.current = !!(deleteDialog || completeDialog || deleteAttDialog || attachmentSourceOpen || zoomAtt || showTasksMd);
 
   useEffect(() => {
     const modalIsOpen = Boolean(zoomAtt) || showTasksMd;
@@ -1733,23 +1848,41 @@ export default function CalendarTaskApp() {
             id="attachment-upload"
             className="calendar-task-app__upload-zone"
             type="button"
-            aria-label="Add PNG or JPEG image attachment"
-            onClick={() => fileRef.current?.click()}
+            aria-label={isMobile ? "Choose camera or gallery for image attachment" : "Add PNG or JPEG image attachment"}
+            onClick={openAttachmentPicker}
             style={{ border: "2px dashed rgba(59,130,246,0.25)", borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", marginBottom: 8, width: "100%", color: "inherit", background: "transparent", fontFamily: "inherit" }}
           >
             <span aria-hidden="true" style={{ display: "block", fontSize: 20, marginBottom: 1 }}>{"\uD83D\uDCF7"}</span>
-            <span style={{ display: "block", fontSize: 8, color: "rgba(255,255,255,0.3)" }}>Click to add image</span>
+            <span style={{ display: "block", fontSize: 8, color: "rgba(255,255,255,0.3)" }}>{isMobile ? "Choose camera or gallery" : "Click to add image"}</span>
           </button>
           <input
             ref={fileRef}
-            id="attachment-file-input"
+            id="attachment-gallery-input"
             className="calendar-task-app__file-input"
             type="file"
             accept="image/png,image/jpeg"
-            aria-label="Choose PNG or JPEG image"
+            aria-label="Choose PNG or JPEG image from gallery"
             hidden
             onChange={handleFileSelect}
           />
+          <input
+            ref={cameraFileRef}
+            id="attachment-camera-input"
+            className="calendar-task-app__file-input"
+            type="file"
+            accept="image/png,image/jpeg"
+            capture="environment"
+            aria-label="Take a PNG or JPEG photo with camera"
+            hidden
+            onChange={handleFileSelect}
+          />
+          {attachmentSourceOpen && (
+            <AttachmentSourceDialog
+              onCamera={() => chooseAttachmentSource("camera")}
+              onGallery={() => chooseAttachmentSource("gallery")}
+              onCancel={() => setAttachmentSourceOpen(false)}
+            />
+          )}
 
           {/* Attachment list */}
           <div id="attachment-list" className="calendar-task-app__attachment-list" role="listbox" aria-label="Attachments" aria-orientation="vertical" aria-activedescendant={attachments[focusedAttIdx] ? `attachment-card-${attachments[focusedAttIdx].id}` : undefined}>
