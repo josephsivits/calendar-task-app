@@ -830,13 +830,13 @@ export default function CalendarTaskApp() {
         .notes-mdx-shell { min-height: 140px; border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; overflow: hidden; background: rgba(255,255,255,0.06); }
         .notes-mdx-shell .mdxeditor { --baseBase: #171923; --baseBgSubtle: #1b1c27; --baseBg: #20212d; --baseBgHover: #292a37; --baseBgActive: #30313f; --baseLine: #3d3f4c; --baseBorder: #4a4c59; --baseBorderHover: #5b5d6b; --baseText: #e2e8f0; --baseTextContrast: #ffffff; --basePageBg: #20212d; --accentText: #c084fc; min-height: 140px; background: transparent; color: #e2e8f0; font-family: inherit; font-size: 11px; }
         .notes-mdx-shell .mdxeditor-root-contenteditable, .notes-mdx-shell [contenteditable="true"] { color: #e2e8f0 !important; caret-color: #f97316; }
-        .notes-mdx-shell .mdxeditor-rich-text-editor { min-height: 140px; padding: 8px 10px; line-height: 1.6; color: #e2e8f0; }
-        .notes-mdx-shell .mdxeditor-rich-text-editor p { margin: 0 0 8px; }
-        .notes-mdx-shell .mdxeditor-rich-text-editor h1 { font-size: 16px; color: #dc143c; }
-        .notes-mdx-shell .mdxeditor-rich-text-editor h2 { font-size: 14px; color: #dc143c; }
-        .notes-mdx-shell .mdxeditor-rich-text-editor h3 { font-size: 12px; color: #dc143c; }
-        .notes-mdx-shell .mdxeditor-rich-text-editor strong { color: #b8f3ff; }
-        .notes-mdx-shell .mdxeditor-rich-text-editor em { color: rgba(255,255,255,0.5); }
+        .notes-mdx-shell [contenteditable="true"] { min-height: 140px; padding: 8px 10px; line-height: 1.6; color: #e2e8f0; }
+        .notes-mdx-shell [contenteditable="true"] p { margin: 0 0 8px; }
+        .notes-mdx-shell [contenteditable="true"] h1 { font-size: 16px; color: #dc143c !important; }
+        .notes-mdx-shell [contenteditable="true"] h2 { font-size: 14px; color: #dc143c !important; }
+        .notes-mdx-shell [contenteditable="true"] h3 { font-size: 12px; color: #dc143c !important; }
+        .notes-mdx-shell [contenteditable="true"] strong { color: #b8f3ff !important; }
+        .notes-mdx-shell [contenteditable="true"] em { color: rgba(255,255,255,0.5); }
       `}</style>
 
       {/* ═══ COL 1: TASKS ═══ */}
