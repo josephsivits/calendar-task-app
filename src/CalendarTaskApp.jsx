@@ -819,6 +819,9 @@ export default function CalendarTaskApp() {
           outline: none;
           box-shadow: inset 0 0 0 2px rgba(249,115,22,0.85);
         }
+        button[data-panel-toggle]:focus-visible {
+          box-shadow: none;
+        }
         [data-focusable-card]:focus, [data-focusable-card]:focus-visible {
           outline: none;
           box-shadow: inset 0 0 0 2px rgba(249,115,22,0.85);
@@ -853,11 +856,12 @@ export default function CalendarTaskApp() {
         data-nav-column="tasks"
         data-nav-active={navColumn === "tasks" ? "true" : "false"}
         tabIndex={-1}
-        style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 22%" }}
+        style={{ ...S.col, flex: isMobile ? "0 0 auto" : panelOpen.tasks ? "22 1 0" : "0 0 11%", transition: "flex 0.2s ease" }}
         onFocusCapture={() => setNavColumn("tasks")}
       >
         <button
           type="button"
+          data-panel-toggle
           title={panelOpen.tasks ? "Collapse Tasks panel" : "Expand Tasks panel"}
           aria-expanded={panelOpen.tasks}
           onClick={() => togglePanel("tasks")}
@@ -989,11 +993,12 @@ export default function CalendarTaskApp() {
         data-nav-column="widgets"
         data-nav-active={navColumn === "widgets" ? "true" : "false"}
         tabIndex={-1}
-        style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 30%" }}
+        style={{ ...S.col, flex: isMobile ? "0 0 auto" : panelOpen.widgets ? "30 1 0" : "0 0 15%", transition: "flex 0.2s ease" }}
         onFocusCapture={() => setNavColumn("widgets")}
       >
         <button
           type="button"
+          data-panel-toggle
           title={panelOpen.widgets ? "Collapse Widgets panel" : "Expand Widgets panel"}
           aria-expanded={panelOpen.widgets}
           onClick={() => togglePanel("widgets")}
@@ -1219,11 +1224,12 @@ export default function CalendarTaskApp() {
         data-nav-column="attachments"
         data-nav-active={navColumn === "attachments" ? "true" : "false"}
         tabIndex={-1}
-        style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 24%" }}
+        style={{ ...S.col, flex: isMobile ? "0 0 auto" : panelOpen.attachments ? "24 1 0" : "0 0 12%", transition: "flex 0.2s ease" }}
         onFocusCapture={() => setNavColumn("attachments")}
       >
         <button
           type="button"
+          data-panel-toggle
           title={panelOpen.attachments ? "Collapse Attachments & Notes panel" : "Expand Attachments & Notes panel"}
           aria-expanded={panelOpen.attachments}
           onClick={() => togglePanel("attachments")}
@@ -1354,11 +1360,12 @@ export default function CalendarTaskApp() {
         data-nav-column="completed"
         data-nav-active={navColumn === "completed" ? "true" : "false"}
         tabIndex={-1}
-        style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 24%", borderRight: "none", borderBottom: isMobile ? "none" : undefined }}
+        style={{ ...S.col, flex: isMobile ? "0 0 auto" : panelOpen.completed ? "24 1 0" : "0 0 12%", borderRight: "none", borderBottom: isMobile ? "none" : undefined, transition: "flex 0.2s ease" }}
         onFocusCapture={() => setNavColumn("completed")}
       >
         <button
           type="button"
+          data-panel-toggle
           title={panelOpen.completed ? "Collapse Completed panel" : "Expand Completed panel"}
           aria-expanded={panelOpen.completed}
           onClick={() => togglePanel("completed")}
