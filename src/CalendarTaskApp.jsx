@@ -12,7 +12,7 @@ import {
   saveTasks, loadTasks, saveNote, loadNote, loadNoteRaw,
   saveSettings, loadSettings, exportAllMarkdownZip,
   importMarkdownFiles, parseZip,
-  saveAttachments, loadAttachments, renderMarkdown,
+  saveAttachments, loadAttachments,
   weekKey, weekRange, fmtTime, tasksToMarkdown,
 } from "./markdownDb.js";
 import { useLayoutMode } from "./layoutMode.js";
@@ -240,8 +240,7 @@ export default function CalendarTaskApp() {
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [completeDialog, setCompleteDialog] = useState(null);
   const [deleteAttDialog, setDeleteAttDialog] = useState(null);
-  const [showMdPreview, setShowMdPreview] = useState(false);
-  const [tasksMdOpen, setTasksMdOpen] = useState(false);
+  const [showTasksMd, setShowTasksMd] = useState(false);
   const [notesEditorOpen, setNotesEditorOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState({
     tasks: true,
@@ -645,7 +644,7 @@ export default function CalendarTaskApp() {
   const filteredCompletedRef = useRef(filteredCompleted);
   filteredCompletedRef.current = filteredCompleted;
   const overlayOpenRef = useRef(false);
-  overlayOpenRef.current = !!(deleteDialog || completeDialog || deleteAttDialog || zoomAtt || showMdPreview);
+  overlayOpenRef.current = !!(deleteDialog || completeDialog || deleteAttDialog || zoomAtt || showTasksMd);
 
   const focusTaskAt = (idx) => {
     const list = tasksRef.current;
@@ -737,7 +736,7 @@ export default function CalendarTaskApp() {
       if (e.shiftKey) {
         attachmentsPanelToggleRef.current?.focus();
       } else {
-        document.querySelector("[data-notes-preview]")?.focus();
+        document.querySelector("[data-notes-export]")?.focus();
       }
       return;
     }
@@ -1382,11 +1381,9 @@ export default function CalendarTaskApp() {
                 />
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
-              <button data-notes-preview style={{ ...S.btn(), fontSize: 8, padding: "2px 8px" }} onClick={() => setShowMdPreview(true)}>Preview</button>
-            </div>
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <button style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)", flex: 1 }} onClick={handleExport}>{"\u2193"} Export</button>
+              <button data-notes-export style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)", flex: 1 }} onClick={handleExport}>{"\u2193"} Export</button>
+              <button style={{ ...S.btn("rgba(148,163,184,0.12)"), border: "1px solid rgba(148,163,184,0.25)", flex: 1 }} onClick={() => setShowTasksMd(true)}>tasks.md</button>
               <button style={{ ...S.btn("rgba(168,85,247,0.12)"), border: "1px solid rgba(168,85,247,0.25)", flex: 1 }} onClick={() => importRef.current?.click()}>{"\u2191"} Import</button>
               <input ref={importRef} type="file" accept=".md,.zip,application/zip" multiple hidden onChange={handleImport} />
             </div>
@@ -1569,47 +1566,23 @@ export default function CalendarTaskApp() {
         </div>
       )}
 
-      {/* Markdown Preview — rendered */}
-      {showMdPreview && (
-        <div style={S.dialog} onClick={() => setShowMdPreview(false)}>
+      {showTasksMd && (
+        <div style={S.dialog} onClick={() => setShowTasksMd(false)}>
           <div style={{ ...S.dialogBox, maxWidth: 600, maxHeight: "85vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>Weekly Notes Preview</span>
-              <button style={S.iconBtn} onClick={() => setShowMdPreview(false)}>{"\u2715"}</button>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>tasks.md (raw)</span>
+              <button type="button" style={S.iconBtn} onClick={() => setShowTasksMd(false)} aria-label="Close tasks.md">{"\u2715"}</button>
             </div>
-
-            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(168,85,247,0.6)", marginBottom: 6 }}>{currentWeekKey} {"\u2014"} {currentWeekRange}</div>
-
-            {/* Rendered note content */}
-            <div
-              className="md-render"
-              style={{ ...S.input, minHeight: 80, padding: "12px 14px", fontSize: 11, lineHeight: 1.7 }}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(noteContent || "") }}
-            />
-
-            <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <button
-                  type="button"
-                  title={tasksMdOpen ? "Collapse tasks.md" : "Expand tasks.md"}
-                  aria-expanded={tasksMdOpen}
-                  onClick={() => setTasksMdOpen((open) => !open)}
-                  style={{ ...S.iconBtn, display: "flex", alignItems: "center", gap: 5, color: "rgba(255,255,255,0.5)", fontSize: 10, opacity: 1, padding: "2px 0" }}
-                >
-                  <span style={{ transform: tasksMdOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>{"\u25BC"}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700 }}>tasks.md (raw)</span>
-                </button>
-                <button style={{ ...S.btn(), fontSize: 8, padding: "2px 8px" }} onClick={handleExport}>{"\u2193"} Export all</button>
-              </div>
-              {tasksMdOpen && (
-                <pre style={{ ...S.input, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", fontSize: 8, lineHeight: 1.5, marginTop: 6 }}>
-                  {tasksToMarkdown(tasks, completedTasks)}
-                </pre>
-              )}
+            <pre style={{ ...S.input, maxHeight: "60vh", overflow: "auto", whiteSpace: "pre-wrap", fontSize: 8, lineHeight: 1.5, padding: "12px 14px" }}>
+              {tasksToMarkdown(tasks, completedTasks)}
+            </pre>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+              <button style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)" }} onClick={handleExport}>{"\u2193"} Export all</button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }
