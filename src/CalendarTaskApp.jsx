@@ -268,6 +268,7 @@ export default function CalendarTaskApp() {
   const taskCardRefs = useRef([]);
   const attCardRefs = useRef([]);
   const completedCardRefs = useRef([]);
+  const attachmentsPanelToggleRef = useRef(null);
   const widgetsColRef = useRef(null);
   const navColumnRef = useRef(navColumn);
   navColumnRef.current = navColumn;
@@ -705,6 +706,46 @@ export default function CalendarTaskApp() {
         widgetsColRef.current?.focus();
       }
     });
+  };
+  const handleNotesEditorKeyDown = (e) => {
+    const editor = e.currentTarget.querySelector('[contenteditable="true"]');
+    const selection = window.getSelection();
+    const atStart = editor && selection?.rangeCount > 0 && selection.isCollapsed && editor.contains(selection.anchorNode)
+      && (() => {
+        const edge = document.createRange();
+        edge.selectNodeContents(editor);
+        edge.collapse(true);
+        return selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, edge) === 0;
+      })();
+    const atEnd = editor && selection?.rangeCount > 0 && selection.isCollapsed && editor.contains(selection.anchorNode)
+      && (() => {
+        const edge = document.createRange();
+        edge.selectNodeContents(editor);
+        edge.collapse(false);
+        return selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, edge) === 0;
+      })();
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      attachmentsPanelToggleRef.current?.focus();
+      return;
+    }
+    if (e.key === "Tab") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) {
+        attachmentsPanelToggleRef.current?.focus();
+      } else {
+        document.querySelector("[data-notes-preview]")?.focus();
+      }
+      return;
+    }
+    if ((e.key === "ArrowLeft" && (atStart || e.altKey)) || (e.key === "ArrowRight" && (atEnd || e.altKey))) {
+      e.preventDefault();
+      e.stopPropagation();
+      focusNavColumn(e.key === "ArrowLeft" ? "widgets" : "completed");
+    }
   };
 
   const focusTaskAtRef = useRef(focusTaskAt);
@@ -1230,6 +1271,7 @@ export default function CalendarTaskApp() {
         <button
           type="button"
           data-panel-toggle
+          ref={attachmentsPanelToggleRef}
           title={panelOpen.attachments ? "Collapse Attachments & Notes panel" : "Expand Attachments & Notes panel"}
           aria-expanded={panelOpen.attachments}
           onClick={() => togglePanel("attachments")}
@@ -1325,7 +1367,7 @@ export default function CalendarTaskApp() {
               <span style={{ ...S.sectionLabel, color: "inherit", marginBottom: 0 }}>Notes {"\u2014"} {currentWeekKey}</span>
             </button>
             {notesEditorOpen && (
-              <div className="notes-mdx-shell">
+              <div className="notes-mdx-shell" onKeyDownCapture={handleNotesEditorKeyDown}>
                 <MDXEditor
                   markdown={noteContent}
                   onChange={setNoteContent}
@@ -1341,7 +1383,7 @@ export default function CalendarTaskApp() {
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
-              <button style={{ ...S.btn(), fontSize: 8, padding: "2px 8px" }} onClick={() => setShowMdPreview(true)}>Preview</button>
+              <button data-notes-preview style={{ ...S.btn(), fontSize: 8, padding: "2px 8px" }} onClick={() => setShowMdPreview(true)}>Preview</button>
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
               <button style={{ ...S.btn("rgba(59,130,246,0.12)"), border: "1px solid rgba(59,130,246,0.25)", flex: 1 }} onClick={handleExport}>{"\u2193"} Export</button>
