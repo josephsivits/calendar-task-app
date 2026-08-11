@@ -6,10 +6,13 @@ import {
   quotePlugin,
   codeBlockPlugin,
   codeMirrorPlugin,
+  CodeMirrorEditor,
+  useCodeBlockEditorContext,
   thematicBreakPlugin,
   markdownShortcutPlugin,
 } from "@mdxeditor/editor";
 import "@mdxeditor/editor/style.css";
+import { $createParagraphNode } from "lexical";
 import {
   saveTasks, loadTasks, saveNote, loadNote, loadNoteRaw,
   saveSettings, loadSettings, exportAllMarkdownZip,
@@ -29,6 +32,34 @@ const fmtDateDisplay = (iso) => {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 };
 const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+
+function ExitOnEnterCodeMirrorEditor(props) {
+  const { parentEditor, lexicalNode } = useCodeBlockEditorContext();
+
+  const handleKeyDownCapture = (e) => {
+    if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    parentEditor.update(() => {
+      const paragraph = $createParagraphNode();
+      lexicalNode.insertAfter(paragraph);
+      paragraph.select();
+    });
+    requestAnimationFrame(() => parentEditor.focus());
+  };
+
+  return (
+    <div onKeyDownCapture={handleKeyDownCapture}>
+      <CodeMirrorEditor {...props} />
+    </div>
+  );
+}
+
+const exitOnEnterCodeBlockDescriptor = {
+  priority: 2,
+  match: () => true,
+  Editor: ExitOnEnterCodeMirrorEditor,
+};
 const getMonday = (d) => {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -1419,8 +1450,19 @@ export default function CalendarTaskApp() {
                     headingsPlugin(),
                     listsPlugin(),
                     quotePlugin(),
-                    codeBlockPlugin(),
-                    codeMirrorPlugin(),
+                    codeBlockPlugin({
+                      codeBlockEditorDescriptors: [exitOnEnterCodeBlockDescriptor],
+                    }),
+                    codeMirrorPlugin({
+                      codeBlockLanguages: {
+                        "": "Text",
+                        js: "JavaScript",
+                        ts: "TypeScript",
+                        tsx: "TypeScript (React)",
+                        jsx: "JavaScript (React)",
+                        css: "CSS",
+                      },
+                    }),
                     thematicBreakPlugin(),
                     markdownShortcutPlugin(),
                   ]}
