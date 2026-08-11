@@ -4,6 +4,8 @@ import {
   headingsPlugin,
   listsPlugin,
   quotePlugin,
+  codeBlockPlugin,
+  codeMirrorPlugin,
   thematicBreakPlugin,
   markdownShortcutPlugin,
 } from "@mdxeditor/editor";
@@ -889,7 +891,18 @@ export default function CalendarTaskApp() {
         .notes-mdx-shell [contenteditable="true"] h3 { font-size: 12px; color: #dc143c !important; }
         .notes-mdx-shell [contenteditable="true"] strong { color: #b8f3ff !important; }
         .notes-mdx-shell [contenteditable="true"] em { color: rgba(255,255,255,0.5); }
-        .notes-mdx-shell [contenteditable="true"] pre {
+        .notes-mdx-shell [contenteditable="true"] code {
+          color: #fb923c !important;
+          font-family: "JetBrains Mono", monospace;
+        }
+        .notes-mdx-shell [contenteditable="true"] p code,
+        .notes-mdx-shell [contenteditable="true"] li code,
+        .notes-mdx-shell [contenteditable="true"] blockquote code {
+          padding: 1px 4px;
+          border-radius: 3px;
+          background: rgba(249,115,22,0.14);
+        }
+        .notes-mdx-shell pre {
           margin: 8px 0;
           padding: 8px 10px;
           overflow-x: auto;
@@ -899,7 +912,27 @@ export default function CalendarTaskApp() {
           color: #fb923c !important;
           font-family: "JetBrains Mono", monospace;
         }
-        .notes-mdx-shell [contenteditable="true"] pre code { color: #fb923c !important; }
+        .notes-mdx-shell pre code {
+          padding: 0;
+          background: transparent;
+          color: #fb923c !important;
+        }
+        .notes-mdx-shell .cm-editor {
+          margin: 8px 0;
+          border: 1px solid rgba(249,115,22,0.4);
+          border-radius: 4px;
+          background: rgba(249,115,22,0.1);
+          color: #fb923c !important;
+        }
+        .notes-mdx-shell .cm-scroller {
+          overflow: auto;
+          font-family: "JetBrains Mono", monospace;
+        }
+        .notes-mdx-shell .cm-content,
+        .notes-mdx-shell .cm-line,
+        .notes-mdx-shell .cm-content span {
+          color: #fb923c !important;
+        }
       `}</style>
 
       {/* ═══ COL 1: TASKS ═══ */}
@@ -1386,6 +1419,8 @@ export default function CalendarTaskApp() {
                     headingsPlugin(),
                     listsPlugin(),
                     quotePlugin(),
+                    codeBlockPlugin(),
+                    codeMirrorPlugin(),
                     thematicBreakPlugin(),
                     markdownShortcutPlugin(),
                   ]}
