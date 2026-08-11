@@ -243,6 +243,12 @@ export default function CalendarTaskApp() {
   const [showMdPreview, setShowMdPreview] = useState(false);
   const [tasksMdOpen, setTasksMdOpen] = useState(false);
   const [notesEditorOpen, setNotesEditorOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState({
+    tasks: true,
+    widgets: true,
+    attachments: true,
+    completed: true,
+  });
   const [zoomAtt, setZoomAtt] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [importMsg, setImportMsg] = useState(null);
@@ -468,6 +474,9 @@ export default function CalendarTaskApp() {
   const toggleTaskNotes = (id, e) => {
     e.stopPropagation();
     setExpandedNotes((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const togglePanel = (panel) => {
+    setPanelOpen((prev) => ({ ...prev, [panel]: !prev[panel] }));
   };
   const updateTaskNotes = (id, notes) => {
     setTasks((prev) => prev.map((t) => t.id === id ? { ...t, notes } : t));
@@ -847,7 +856,18 @@ export default function CalendarTaskApp() {
         style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 22%" }}
         onFocusCapture={() => setNavColumn("tasks")}
       >
-        <div style={S.colTitle}>Tasks</div>
+        <button
+          type="button"
+          title={panelOpen.tasks ? "Collapse Tasks panel" : "Expand Tasks panel"}
+          aria-expanded={panelOpen.tasks}
+          onClick={() => togglePanel("tasks")}
+          style={{ ...S.iconBtn, ...S.colTitle, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, opacity: 1, padding: "0 0 10px", color: "rgba(255,255,255,0.3)" }}
+        >
+          <span style={{ transform: panelOpen.tasks ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+          <span>Tasks ({tasks.length})</span>
+        </button>
+        {panelOpen.tasks && (
+          <>
         <div style={S.colScroll} role="listbox" aria-label="Tasks">
           {tasks.map((task, idx) => {
             const sel = task.id === selectedTaskId;
@@ -959,6 +979,8 @@ export default function CalendarTaskApp() {
           })}
         </div>
         <button style={{ ...S.btn("rgba(34,197,94,0.15)"), border: "1px dashed rgba(34,197,94,0.4)", marginTop: 6, width: "100%" }} onClick={addTask}>+ Add Task</button>
+          </>
+        )}
       </div>
 
       {/* ═══ COL 2: WIDGETS ═══ */}
@@ -970,8 +992,18 @@ export default function CalendarTaskApp() {
         style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 30%" }}
         onFocusCapture={() => setNavColumn("widgets")}
       >
-        <div style={S.colTitle}>Widgets</div>
-        <div style={S.colScroll}>
+        <button
+          type="button"
+          title={panelOpen.widgets ? "Collapse Widgets panel" : "Expand Widgets panel"}
+          aria-expanded={panelOpen.widgets}
+          onClick={() => togglePanel("widgets")}
+          style={{ ...S.iconBtn, ...S.colTitle, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, opacity: 1, padding: "0 0 10px", color: "rgba(255,255,255,0.3)" }}
+        >
+          <span style={{ transform: panelOpen.widgets ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+          <span>Widgets</span>
+        </button>
+        {panelOpen.widgets && (
+          <div style={S.colScroll}>
 
           {/* --- TOP ROW: Today + Date + Play/Pause --- */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
@@ -1178,7 +1210,8 @@ export default function CalendarTaskApp() {
               Completed: <strong style={{ color: pomodoroRunning ? "#f97316" : "rgba(255,255,255,0.35)" }}>{pomodoroCount}</strong> pomodoros
             </div>
           </div>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* ═══ COL 3: ATTACHMENTS + NOTES ═══ */}
@@ -1189,7 +1222,18 @@ export default function CalendarTaskApp() {
         style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 24%" }}
         onFocusCapture={() => setNavColumn("attachments")}
       >
-        <div style={S.colTitle}>Attachments & Notes</div>
+        <button
+          type="button"
+          title={panelOpen.attachments ? "Collapse Attachments & Notes panel" : "Expand Attachments & Notes panel"}
+          aria-expanded={panelOpen.attachments}
+          onClick={() => togglePanel("attachments")}
+          style={{ ...S.iconBtn, ...S.colTitle, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, opacity: 1, padding: "0 0 10px", color: "rgba(255,255,255,0.3)" }}
+        >
+          <span style={{ transform: panelOpen.attachments ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+          <span>Attachments &amp; Notes</span>
+        </button>
+        {panelOpen.attachments && (
+          <>
         <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", textAlign: "center", marginBottom: 8 }}>{currentWeekKey} {"\u2014"} {currentWeekRange}</div>
         <div style={S.colScroll}>
 
@@ -1301,6 +1345,8 @@ export default function CalendarTaskApp() {
             {importMsg && <div style={{ fontSize: 9, color: "#86efac", textAlign: "center", marginTop: 6, padding: "4px 8px", background: "rgba(34,197,94,0.1)", borderRadius: 6 }}>{importMsg}</div>}
           </div>
         </div>
+          </>
+        )}
       </div>
 
       {/* ═══ COL 4: COMPLETED ═══ */}
@@ -1311,7 +1357,18 @@ export default function CalendarTaskApp() {
         style={{ ...S.col, flex: isMobile ? "0 0 auto" : "0 0 24%", borderRight: "none", borderBottom: isMobile ? "none" : undefined }}
         onFocusCapture={() => setNavColumn("completed")}
       >
-        <div style={S.colTitle}>Completed</div>
+        <button
+          type="button"
+          title={panelOpen.completed ? "Collapse Completed panel" : "Expand Completed panel"}
+          aria-expanded={panelOpen.completed}
+          onClick={() => togglePanel("completed")}
+          style={{ ...S.iconBtn, ...S.colTitle, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, opacity: 1, padding: "0 0 10px", color: "rgba(255,255,255,0.3)" }}
+        >
+          <span style={{ transform: panelOpen.completed ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+          <span>Completed ({filteredCompleted.length})</span>
+        </button>
+        {panelOpen.completed && (
+          <>
         <div style={{ textAlign: "center", marginBottom: 8, fontSize: 9, color: "rgba(255,255,255,0.25)" }}>{fmtDateDisplay(selectedDate)}</div>
         <div style={S.colScroll} role="listbox" aria-label="Completed tasks">
           {filteredCompleted.length === 0 ? (
@@ -1399,6 +1456,8 @@ export default function CalendarTaskApp() {
             );
           })}
         </div>
+          </>
+        )}
       </div>
 
       {/* ═══ DIALOGS ═══ */}
