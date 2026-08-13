@@ -8,8 +8,6 @@ import {
   codeMirrorPlugin,
   CodeMirrorEditor,
   useCodeBlockEditorContext,
-  thematicBreakPlugin,
-  markdownShortcutPlugin,
 } from "@mdxeditor/editor";
 import "@mdxeditor/editor/style.css";
 import { $createParagraphNode } from "lexical";
@@ -390,14 +388,21 @@ export default function CalendarTaskApp() {
   const [focusSoundEnabled, setFocusSoundEnabled] = useState(true);
   const [breakSoundEnabled, setBreakSoundEnabled] = useState(true);
   const pomodoroRef = useRef(null);
+  const lastTimerTickTime = useRef(null);
+  const lastPomodoroTickTime = useRef(null);
   const focusSoundEnabledRef = useRef(true);
   const breakSoundEnabledRef = useRef(true);
   focusSoundEnabledRef.current = focusSoundEnabled;
   breakSoundEnabledRef.current = breakSoundEnabled;
 
   /* notes + attachments (per-week) */
-  const [noteContent, setNoteContent] = useState("");
-  const [attachments, setAttachments] = useState([]);
+  // MDXEditor treats `markdown` as its initial value. Loading notes here,
+  // rather than after the editor mounts, prevents it from initializing with
+  // an empty document and persisting that value over an existing note.
+  const [noteContent, setNoteContent] = useState(() => loadNote(todayStr()));
+  const [notesWeekKey, setNotesWeekKey] = useState(() => weekKey(todayStr()));
+  const [notesEditorVersion, setNotesEditorVersion] = useState(0);
+  const [attachments, setAttachments] = useState(() => loadAttachments(todayStr()));
   const [selectedAttId, setSelectedAttId] = useState(null);
   const fileRef = useRef(null);
   const cameraFileRef = useRef(null);
@@ -459,7 +464,6 @@ export default function CalendarTaskApp() {
   const hydrated = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [lastSynced, setLastSynced] = useState(null);
-  const prevWeekKey = useRef(null);
 
   useEffect(() => {
     const { activeTasks, completedTasks: ct } = loadTasks();
@@ -474,7 +478,7 @@ export default function CalendarTaskApp() {
     const td = todayStr();
     setNoteContent(loadNote(td));
     setAttachments(loadAttachments(td));
-    prevWeekKey.current = weekKey(td);
+    setNotesWeekKey(weekKey(td));
     setLastSynced(new Date());
     requestAnimationFrame(() => { hydrated.current = true; });
   }, []);
@@ -487,7 +491,6 @@ export default function CalendarTaskApp() {
   const syncToStorage = () => {
     saveTasks(tasks, completedTasks);
     saveSettings({ nextTaskId, nextAttId, pomodoroCount, focusSoundEnabled, breakSoundEnabled });
-    saveNote(selectedDate, noteContent);
     saveAttachments(selectedDate, attachments);
     setDirty(false);
     setLastSynced(new Date());
@@ -505,45 +508,37 @@ export default function CalendarTaskApp() {
     return () => window.removeEventListener("beforeunload", handler);
   });
 
-  /* week change — swap notes + attachments */
-  useEffect(() => {
-    if (!hydrated.current) return;
-    const newWk = weekKey(selectedDate);
-    const oldWk = prevWeekKey.current;
-    if (oldWk && oldWk !== newWk) {
-      const oldRange = weekRange(selectedDate);
-      localStorage.setItem("md:notes:" + oldWk, "# " + oldWk + " \u2014 " + oldRange + "\n\n" + noteContent);
-      localStorage.setItem("md:attachments:" + oldWk, JSON.stringify(attachments));
-      setNoteContent(loadNote(selectedDate));
-      setAttachments(loadAttachments(selectedDate));
-      setSelectedAttId(null);
-    }
-    prevWeekKey.current = newWk;
-  }, [weekKey(selectedDate)]);
-
   /* track isToday */
   useEffect(() => {
     setIsToday(selectedDate === todayStr());
   }, [selectedDate]);
 
-  /* ═══ 300s TIMER (task time) ═══ */
+  /* ═══ 300s TIMER (task time) — wall-clock based ═══ */
   useEffect(() => {
-    if (timerRunning) {
-      timerRef.current = setInterval(() => {
-        setTimerSeconds((prev) => {
-          const next = prev + 1;
-          if (next >= 300) {
-            audio.timerComplete();
-            return 0;
-          }
-          return next;
-        });
-        setTasks((prev) =>
-          prev.map((t) => t.id === selectedTaskId ? { ...t, timeOnTask: t.timeOnTask + 1 } : t)
-        );
-      }, 1000);
-    }
-    return () => clearInterval(timerRef.current);
+    if (!timerRunning) return;
+    if (!lastTimerTickTime.current) lastTimerTickTime.current = Date.now();
+
+    timerRef.current = setInterval(() => {
+      const now = Date.now();
+      const delta = Math.floor((now - lastTimerTickTime.current) / 1000);
+      if (delta < 1) return; // not a full second yet
+      lastTimerTickTime.current += delta * 1000; // advance by exact seconds to prevent drift
+
+      setTimerSeconds((prev) => {
+        const next = prev + delta;
+        if (next >= 300) {
+          audio.timerComplete();
+          return next % 300; // carry remainder
+        }
+        return next;
+      });
+
+      setTasks((prev) =>
+        prev.map((t) => t.id === selectedTaskId ? { ...t, timeOnTask: t.timeOnTask + delta } : t)
+      );
+    }, 250); // catches up quickly after background
+
+    return () => { clearInterval(timerRef.current); };
   }, [timerRunning, selectedTaskId]);
 
   /* Flush the latest task state whenever a 300s timer cycle rolls over. */
@@ -555,39 +550,49 @@ export default function CalendarTaskApp() {
     timerWasRunningRef.current = timerRunning;
   }, [timerRunning, timerSeconds]);
 
-  /* ═══ POMODORO (independent) ═══ */
+  /* ═══ POMODORO (independent) — wall-clock based ═══ */
   useEffect(() => {
-    if (pomodoroRunning) {
-      pomodoroRef.current = setInterval(() => {
-        setPomodoroPhase((phase) => {
-          if (phase === "breakPending") return phase;
-          setPomodoroSeconds((ps) => {
-            const limit = phase === "work" ? 1500 : 300;
-            const next = ps + 1;
-            if (next >= limit) {
-              if (phase === "work") {
-                if (focusSoundEnabledRef.current) audio.pomodoroComplete();
-                setPomodoroRunning(false);
-                setPomodoroPhase("breakPending");
-                setPomodoroCount((c) => c + 1);
-                return 0;
-              } else {
-                if (breakSoundEnabledRef.current) audio.breakComplete();
-                setPomodoroRunning(false);
-                setPomodoroPhase("work");
-                return 0;
-              }
+    if (!pomodoroRunning) return;
+    if (!lastPomodoroTickTime.current) lastPomodoroTickTime.current = Date.now();
+
+    pomodoroRef.current = setInterval(() => {
+      const now = Date.now();
+      const delta = Math.floor((now - lastPomodoroTickTime.current) / 1000);
+      if (delta < 1) return; // not a full second yet
+      lastPomodoroTickTime.current += delta * 1000; // advance by exact seconds to prevent drift
+
+      setPomodoroPhase((phase) => {
+        if (phase === "breakPending") return phase;
+
+        setPomodoroSeconds((ps) => {
+          const limit = phase === "work" ? 1500 : 300;
+          const next = ps + delta;
+          if (next >= limit) {
+            lastPomodoroTickTime.current = null;
+            if (phase === "work") {
+              if (focusSoundEnabledRef.current) audio.pomodoroComplete();
+              setPomodoroRunning(false);
+              setPomodoroPhase("breakPending");
+              setPomodoroCount((c) => c + 1);
+              return 0;
             }
-            return next;
-          });
-          return phase;
+            if (breakSoundEnabledRef.current) audio.breakComplete();
+            setPomodoroRunning(false);
+            setPomodoroPhase("work");
+            return 0;
+          }
+          return next;
         });
-      }, 1000);
-    }
+
+        return phase;
+      });
+    }, 250); // catches up quickly after background
+
     return () => clearInterval(pomodoroRef.current);
   }, [pomodoroRunning]);
 
   const toggleTimer = () => {
+    if (timerRunning) lastTimerTickTime.current = null;
     setTimerRunning((r) => !r);
     syncToStorage();
   };
@@ -597,6 +602,7 @@ export default function CalendarTaskApp() {
       setPomodoroPhase("break");
       setPomodoroSeconds(0);
     }
+    if (pomodoroRunning) lastPomodoroTickTime.current = null;
     setPomodoroRunning((r) => !r);
     syncToStorage();
   };
@@ -753,9 +759,25 @@ export default function CalendarTaskApp() {
     const sel = selectedDate.split("-");
     return Number(sel[0]) === calYear && Number(sel[1]) - 1 === calMonth && Number(sel[2]) === day;
   };
+  const selectDate = (nextDate) => {
+    if (nextDate === selectedDate) return;
+
+    if (weekKey(nextDate) !== weekKey(selectedDate)) {
+      // Notes are saved by handleNoteChange, so date changes only load data.
+      // Keeping writes out of this transition prevents stale editor state
+      // from being copied into another week's storage key.
+      saveAttachments(selectedDate, attachments);
+      setNoteContent(loadNote(nextDate));
+      setAttachments(loadAttachments(nextDate));
+      setNotesWeekKey(weekKey(nextDate));
+      setSelectedAttId(null);
+    }
+
+    setSelectedDate(nextDate);
+  };
   const selectDay = (day) => {
     if (!day) return;
-    setSelectedDate(calYear + "-" + String(calMonth + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0"));
+    selectDate(calYear + "-" + String(calMonth + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0"));
   };
   const calendarDayIso = (day) => (
     day
@@ -780,7 +802,7 @@ export default function CalendarTaskApp() {
   };
   const goToday = () => {
     const td = todayStr();
-    setSelectedDate(td);
+    selectDate(td);
     const d = new Date();
     setCalMonth(d.getMonth());
     setCalYear(d.getFullYear());
@@ -835,7 +857,10 @@ export default function CalendarTaskApp() {
         );
         setNextTaskId(maxId + 1);
       }
-      if (notesImported > 0) setNoteContent(loadNote(selectedDate));
+      if (notesImported > 0) {
+        setNoteContent(loadNote(selectedDate));
+        setNotesEditorVersion((version) => version + 1);
+      }
 
       const parts = [];
       if (tasksResult) {
@@ -860,6 +885,15 @@ export default function CalendarTaskApp() {
   const currentWeekRange = weekRange(selectedDate);
   const pomodoroLabel = pomodoroPhase === "breakPending" ? "Break Pending" : pomodoroPhase === "break" ? "Break" : "Focus";
   const circles = useMemo(() => { const arr = []; for (let i = 0; i < 300; i++) arr.push(i < timerSeconds); return arr; }, [timerSeconds]);
+
+  const handleNoteChange = (markdown, initialMarkdownNormalize) => {
+    // MDXEditor can emit an internal normalization update as it mounts.
+    // The saved source remains authoritative until the user edits it.
+    if (initialMarkdownNormalize) return;
+    if (notesWeekKey !== weekKey(selectedDate)) return;
+    setNoteContent(markdown);
+    saveNote(selectedDate, markdown);
+  };
 
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
@@ -1074,10 +1108,16 @@ export default function CalendarTaskApp() {
       display: "flex",
       flexDirection: isMobile ? "column" : "row",
       height: "100dvh",
+      minHeight: "100dvh",
+      maxHeight: "100dvh",
+      width: "100%",
+      position: "fixed",
+      inset: 0,
       fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
       background: "#0a0f1a",
       color: "#e2e8f0",
       overflow: isMobile ? "auto" : "hidden",
+      overscrollBehavior: "contain",
       fontSize: 13,
     },
     col: {
@@ -1635,7 +1675,7 @@ export default function CalendarTaskApp() {
                 type="date"
                 value={selectedDate}
                 aria-label="Select calendar date"
-                onChange={(e) => { setSelectedDate(e.target.value); const d = new Date(e.target.value + "T12:00:00"); setCalMonth(d.getMonth()); setCalYear(d.getFullYear()); }}
+                onChange={(e) => { selectDate(e.target.value); const d = new Date(e.target.value + "T12:00:00"); setCalMonth(d.getMonth()); setCalYear(d.getFullYear()); }}
                 style={{ ...S.input, width: "auto", fontSize: 9, padding: "2px 6px" }}
               />
             </div>
@@ -2003,10 +2043,15 @@ export default function CalendarTaskApp() {
             {notesEditorOpen && (
               <div id="weekly-notes-editor" className="notes-mdx-shell calendar-task-app__markdown-editor" onKeyDownCapture={handleNotesEditorKeyDown}>
                 <MDXEditor
+                  // Change the editor instance when the shortcut configuration
+                  // changes; MDXEditor keeps its Lexical realm for the life of
+                  // the instance, so a stale shortcut plugin must not survive
+                  // a hot update or notes-panel remount.
+                  key={`literal-hyphens-v2:${currentWeekKey}:${notesEditorVersion}`}
                   className="calendar-task-app__markdown-editor-input"
                   contentEditableClassName="calendar-task-app__markdown-editor-content"
                   markdown={noteContent}
-                  onChange={setNoteContent}
+                  onChange={handleNoteChange}
                   placeholder={"Notes for " + currentWeekRange + "..."}
                   translation={(key, defaultValue) => key === "contentArea.editableMarkdown" ? `Weekly notes for ${currentWeekRange}` : defaultValue}
                   plugins={[
@@ -2026,8 +2071,6 @@ export default function CalendarTaskApp() {
                         css: "CSS",
                       },
                     }),
-                    thematicBreakPlugin(),
-                    markdownShortcutPlugin(),
                   ]}
                 />
               </div>
