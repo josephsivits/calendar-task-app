@@ -1,18 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
-  MDXEditor,
-  headingsPlugin,
-  listsPlugin,
-  quotePlugin,
-  codeBlockPlugin,
-  codeMirrorPlugin,
-  CodeMirrorEditor,
-  useCodeBlockEditorContext,
-} from "@mdxeditor/editor";
-import "@mdxeditor/editor/style.css";
-import { $createParagraphNode } from "lexical";
-import {
-  saveTasks, loadTasks, saveNote, loadNote, loadNoteRaw,
+  saveTasks, loadTasks, saveNote, loadNote, renderMarkdown,
   saveSettings, loadSettings, exportAllMarkdownZip,
   importMarkdownFiles, parseZip,
   saveAttachments, loadAttachments,
@@ -31,33 +19,6 @@ const fmtDateDisplay = (iso) => {
 };
 const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
 
-function ExitOnEnterCodeMirrorEditor(props) {
-  const { parentEditor, lexicalNode } = useCodeBlockEditorContext();
-
-  const handleKeyDownCapture = (e) => {
-    if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
-    e.preventDefault();
-    e.stopPropagation();
-    parentEditor.update(() => {
-      const paragraph = $createParagraphNode();
-      lexicalNode.insertAfter(paragraph);
-      paragraph.select();
-    });
-    requestAnimationFrame(() => parentEditor.focus());
-  };
-
-  return (
-    <div onKeyDownCapture={handleKeyDownCapture}>
-      <CodeMirrorEditor {...props} />
-    </div>
-  );
-}
-
-const exitOnEnterCodeBlockDescriptor = {
-  priority: 2,
-  match: () => true,
-  Editor: ExitOnEnterCodeMirrorEditor,
-};
 const getMonday = (d) => {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -396,12 +357,8 @@ export default function CalendarTaskApp() {
   breakSoundEnabledRef.current = breakSoundEnabled;
 
   /* notes + attachments (per-week) */
-  // MDXEditor treats `markdown` as its initial value. Loading notes here,
-  // rather than after the editor mounts, prevents it from initializing with
-  // an empty document and persisting that value over an existing note.
   const [noteContent, setNoteContent] = useState(() => loadNote(todayStr()));
   const [notesWeekKey, setNotesWeekKey] = useState(() => weekKey(todayStr()));
-  const [notesEditorVersion, setNotesEditorVersion] = useState(0);
   const [attachments, setAttachments] = useState(() => loadAttachments(todayStr()));
   const [selectedAttId, setSelectedAttId] = useState(null);
   const fileRef = useRef(null);
@@ -421,6 +378,7 @@ export default function CalendarTaskApp() {
   const [attachmentSourceOpen, setAttachmentSourceOpen] = useState(false);
   const [showTasksMd, setShowTasksMd] = useState(false);
   const [notesEditorOpen, setNotesEditorOpen] = useState(true);
+  const [notesPreviewOpen, setNotesPreviewOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState({
     tasks: true,
     widgets: true,
@@ -763,9 +721,7 @@ export default function CalendarTaskApp() {
     if (nextDate === selectedDate) return;
 
     if (weekKey(nextDate) !== weekKey(selectedDate)) {
-      // Notes are saved by handleNoteChange, so date changes only load data.
-      // Keeping writes out of this transition prevents stale editor state
-      // from being copied into another week's storage key.
+      // Notes are saved on textarea change, so date changes only load data.
       saveAttachments(selectedDate, attachments);
       setNoteContent(loadNote(nextDate));
       setAttachments(loadAttachments(nextDate));
@@ -859,7 +815,6 @@ export default function CalendarTaskApp() {
       }
       if (notesImported > 0) {
         setNoteContent(loadNote(selectedDate));
-        setNotesEditorVersion((version) => version + 1);
       }
 
       const parts = [];
@@ -886,10 +841,8 @@ export default function CalendarTaskApp() {
   const pomodoroLabel = pomodoroPhase === "breakPending" ? "Break Pending" : pomodoroPhase === "break" ? "Break" : "Focus";
   const circles = useMemo(() => { const arr = []; for (let i = 0; i < 300; i++) arr.push(i < timerSeconds); return arr; }, [timerSeconds]);
 
-  const handleNoteChange = (markdown, initialMarkdownNormalize) => {
-    // MDXEditor can emit an internal normalization update as it mounts.
-    // The saved source remains authoritative until the user edits it.
-    if (initialMarkdownNormalize) return;
+  const handleNoteChange = (e) => {
+    const markdown = e.target.value;
     if (notesWeekKey !== weekKey(selectedDate)) return;
     setNoteContent(markdown);
     saveNote(selectedDate, markdown);
@@ -1012,22 +965,9 @@ export default function CalendarTaskApp() {
     });
   };
   const handleNotesEditorKeyDown = (e) => {
-    const editor = e.currentTarget.querySelector('[contenteditable="true"]');
-    const selection = window.getSelection();
-    const atStart = editor && selection?.rangeCount > 0 && selection.isCollapsed && editor.contains(selection.anchorNode)
-      && (() => {
-        const edge = document.createRange();
-        edge.selectNodeContents(editor);
-        edge.collapse(true);
-        return selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, edge) === 0;
-      })();
-    const atEnd = editor && selection?.rangeCount > 0 && selection.isCollapsed && editor.contains(selection.anchorNode)
-      && (() => {
-        const edge = document.createRange();
-        edge.selectNodeContents(editor);
-        edge.collapse(false);
-        return selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, edge) === 0;
-      })();
+    const editor = e.currentTarget;
+    const atStart = editor.selectionStart === 0 && editor.selectionEnd === 0;
+    const atEnd = editor.selectionStart === editor.value.length && editor.selectionEnd === editor.value.length;
 
     if (e.key === "Escape") {
       e.preventDefault();
@@ -1041,7 +981,7 @@ export default function CalendarTaskApp() {
       if (e.shiftKey) {
         attachmentsPanelToggleRef.current?.focus();
       } else {
-        document.querySelector("[data-notes-export]")?.focus();
+        document.getElementById("weekly-notes-preview-toggle")?.focus();
       }
       return;
     }
@@ -1209,57 +1149,26 @@ export default function CalendarTaskApp() {
         .md-render li { margin: 2px 0; }
         .md-render strong { color: #b8f3ff; }
         .md-render em { color: rgba(255,255,255,0.5); }
-        .notes-mdx-shell { min-height: 140px; border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; overflow: hidden; background: rgba(255,255,255,0.06); }
-        .notes-mdx-shell .mdxeditor { --baseBase: #171923; --baseBgSubtle: #1b1c27; --baseBg: #20212d; --baseBgHover: #292a37; --baseBgActive: #30313f; --baseLine: #3d3f4c; --baseBorder: #4a4c59; --baseBorderHover: #5b5d6b; --baseText: #e2e8f0; --baseTextContrast: #ffffff; --basePageBg: #20212d; --accentText: #c084fc; min-height: 140px; background: transparent; color: #e2e8f0; font-family: inherit; font-size: 11px; }
-        .notes-mdx-shell .mdxeditor-root-contenteditable, .notes-mdx-shell [contenteditable="true"] { color: #e2e8f0 !important; caret-color: #f97316; }
-        .notes-mdx-shell [contenteditable="true"] { min-height: 140px; padding: 8px 10px; line-height: 1.6; color: #e2e8f0; }
-        .notes-mdx-shell [contenteditable="true"] p { margin: 0 0 8px; }
-        .notes-mdx-shell [contenteditable="true"] h1 { font-size: 16px; color: #dc143c !important; }
-        .notes-mdx-shell [contenteditable="true"] h2 { font-size: 14px; color: #dc143c !important; }
-        .notes-mdx-shell [contenteditable="true"] h3 { font-size: 12px; color: #dc143c !important; }
-        .notes-mdx-shell [contenteditable="true"] strong { color: #b8f3ff !important; }
-        .notes-mdx-shell [contenteditable="true"] em { color: rgba(255,255,255,0.5); }
-        .notes-mdx-shell [contenteditable="true"] code {
-          color: #fb923c !important;
+        .md-render code {
+          color: #fb923c;
           font-family: "JetBrains Mono", monospace;
-        }
-        .notes-mdx-shell [contenteditable="true"] p code,
-        .notes-mdx-shell [contenteditable="true"] li code,
-        .notes-mdx-shell [contenteditable="true"] blockquote code {
           padding: 1px 4px;
           border-radius: 3px;
           background: rgba(249,115,22,0.14);
         }
-        .notes-mdx-shell pre {
+        .md-render pre {
           margin: 8px 0;
           padding: 8px 10px;
           overflow-x: auto;
           border: 1px solid rgba(249,115,22,0.4);
           border-radius: 4px;
           background: rgba(249,115,22,0.1);
-          color: #fb923c !important;
+          color: #fb923c;
           font-family: "JetBrains Mono", monospace;
         }
-        .notes-mdx-shell pre code {
+        .md-render pre code {
           padding: 0;
           background: transparent;
-          color: #fb923c !important;
-        }
-        .notes-mdx-shell .cm-editor {
-          margin: 8px 0;
-          border: 1px solid rgba(249,115,22,0.4);
-          border-radius: 4px;
-          background: rgba(249,115,22,0.1);
-          color: #fb923c !important;
-        }
-        .notes-mdx-shell .cm-scroller {
-          overflow: auto;
-          font-family: "JetBrains Mono", monospace;
-        }
-        .notes-mdx-shell .cm-content,
-        .notes-mdx-shell .cm-line,
-        .notes-mdx-shell .cm-content span {
-          color: #fb923c !important;
         }
       `}</style>
 
@@ -2041,40 +1950,46 @@ export default function CalendarTaskApp() {
               <span id="weekly-notes-title" style={{ ...S.sectionLabel, color: "inherit", marginBottom: 0 }}>Notes {"\u2014"} {currentWeekKey}</span>
             </button>
             {notesEditorOpen && (
-              <div id="weekly-notes-editor" className="notes-mdx-shell calendar-task-app__markdown-editor" onKeyDownCapture={handleNotesEditorKeyDown}>
-                <MDXEditor
-                  // Change the editor instance when the shortcut configuration
-                  // changes; MDXEditor keeps its Lexical realm for the life of
-                  // the instance, so a stale shortcut plugin must not survive
-                  // a hot update or notes-panel remount.
-                  key={`literal-hyphens-v2:${currentWeekKey}:${notesEditorVersion}`}
-                  className="calendar-task-app__markdown-editor-input"
-                  contentEditableClassName="calendar-task-app__markdown-editor-content"
-                  markdown={noteContent}
-                  onChange={handleNoteChange}
-                  placeholder={"Notes for " + currentWeekRange + "..."}
-                  translation={(key, defaultValue) => key === "contentArea.editableMarkdown" ? `Weekly notes for ${currentWeekRange}` : defaultValue}
-                  plugins={[
-                    headingsPlugin(),
-                    listsPlugin(),
-                    quotePlugin(),
-                    codeBlockPlugin({
-                      codeBlockEditorDescriptors: [exitOnEnterCodeBlockDescriptor],
-                    }),
-                    codeMirrorPlugin({
-                      codeBlockLanguages: {
-                        "": "Text",
-                        js: "JavaScript",
-                        ts: "TypeScript",
-                        tsx: "TypeScript (React)",
-                        jsx: "JavaScript (React)",
-                        css: "CSS",
-                      },
-                    }),
-                  ]}
-                />
-              </div>
+              <textarea
+                id="weekly-notes-editor"
+                className="calendar-task-app__markdown-editor calendar-task-app__markdown-editor-input"
+                value={noteContent}
+                onChange={handleNoteChange}
+                onKeyDown={handleNotesEditorKeyDown}
+                placeholder={"Notes for " + currentWeekRange + "..."}
+                aria-label={`Weekly notes for ${currentWeekRange}`}
+                style={{ ...S.input, minHeight: 140, resize: "vertical", lineHeight: 1.6, fontSize: 11, padding: "8px 10px" }}
+              />
             )}
+            <div className="calendar-task-app__notes-preview" style={{ marginTop: notesEditorOpen ? 10 : 2 }}>
+              <button
+                id="weekly-notes-preview-toggle"
+                className="calendar-task-app__section-toggle"
+                type="button"
+                title={notesPreviewOpen ? "Collapse rendered preview" : "Expand rendered preview"}
+                aria-expanded={notesPreviewOpen}
+                aria-controls={notesPreviewOpen ? "weekly-notes-preview" : undefined}
+                aria-label={`${notesPreviewOpen ? "Collapse" : "Expand"} rendered markdown preview`}
+                onClick={() => setNotesPreviewOpen((open) => !open)}
+                style={{ ...S.iconBtn, width: "100%", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 5, color: "rgba(168,85,247,0.45)", opacity: 1, padding: "0 0 5px" }}
+              >
+                <span aria-hidden="true" style={{ transform: notesPreviewOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", fontSize: 10 }}>{"\u25BC"}</span>
+                <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5 }}>Rendered Markdown</span>
+              </button>
+              {notesPreviewOpen && (
+                <div
+                  id="weekly-notes-preview"
+                  className="md-render calendar-task-app__notes-preview-content"
+                  style={{ ...S.input, minHeight: 36, padding: "8px 10px", fontSize: 11, lineHeight: 1.7, color: "#e2e8f0" }}
+                >
+                  {noteContent.trim() ? (
+                    <div dangerouslySetInnerHTML={{ __html: renderMarkdown(noteContent) }} />
+                  ) : (
+                    <span style={{ color: "rgba(255,255,255,0.25)", fontStyle: "italic" }}>Nothing to render yet.</span>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="calendar-task-app__notes-actions" style={{ display: "flex", gap: 6, marginTop: 8 }}>
               <button
                 id="export-markdown"

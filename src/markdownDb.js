@@ -536,8 +536,14 @@ export function importMarkdownFiles(files) {
 /* ─────────── Simple Markdown → HTML renderer ─────────── */
 export function renderMarkdown(md) {
   if (!md || !md.trim()) return "<p style='opacity:0.3'><em>Empty</em></p>";
+  const fences = [];
   return md
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/```[^\n]*\n?([\s\S]*?)```/g, (_, code) => {
+      fences.push(`<pre><code>${code.replace(/\n$/, "")}</code></pre>`);
+      return `\0FENCE${fences.length - 1}\0`;
+    })
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
     .replace(/^### (.+)$/gm, "<h3>$1</h3>")
     .replace(/^## (.+)$/gm, "<h2>$1</h2>")
     .replace(/^# (.+)$/gm, "<h1>$1</h1>")
@@ -549,7 +555,8 @@ export function renderMarkdown(md) {
     .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
     .replace(/<\/ul>\s*<ul>/g, "")
     .replace(/\n{2,}/g, "<br/><br/>")
-    .replace(/\n/g, "<br/>");
+    .replace(/\n/g, "<br/>")
+    .replace(/\0FENCE(\d+)\0/g, (_, i) => fences[Number(i)]);
 }
 
 /* ─────────── Import from .md file content ─────────── */
